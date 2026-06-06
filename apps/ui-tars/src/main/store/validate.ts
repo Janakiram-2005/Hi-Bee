@@ -74,6 +74,7 @@ export const PresetSchema = z.object({
   voiceWakeupMode: z.enum(['hotkey', 'phrase', 'live_agent']).optional(),
   voiceWakePhrase: z.string().optional(),        // phrase to activate e.g. 'hey hibee'
   voiceTtsBackend: z.enum(['browser', 'gcp']).optional(), // TTS engine
+  useTeluguVoice: z.boolean().optional(),
 });
 
 export type PresetSource = z.infer<typeof PresetSourceSchema>;

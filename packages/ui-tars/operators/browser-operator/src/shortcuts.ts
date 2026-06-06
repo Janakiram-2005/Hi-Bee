@@ -1,6 +1,10 @@
 /*
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * NOTE: These shortcuts represent simulated page-level inputs dispatched via Chrome DevTools Protocol (CDP).
+ * They are evaluated inside the browser's context. System-level global hotkeys (such as Toggle Voice, Toggle Agent,
+ * and Stop Action) are registered on the operating system level in the main process (see apps/ui-tars/src/main/main.ts).
  */
 import os from 'os';
 

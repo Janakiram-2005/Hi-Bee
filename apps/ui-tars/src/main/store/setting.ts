@@ -57,6 +57,7 @@ export const DEFAULT_SETTING: LocalStore = {
   voiceWakeupMode: 'hotkey',
   voiceWakePhrase: 'hey hibee',
   voiceTtsBackend: 'gcp',
+  useTeluguVoice: false,
 };
 
 export class SettingStore {

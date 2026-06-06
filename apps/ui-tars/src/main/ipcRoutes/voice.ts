@@ -299,30 +299,60 @@ export const voiceRoute = t.router({
   registerHotkey: t.procedure
     .input<{ enabled: boolean }>()
     .handle(async ({ input }) => {
-      const SHORTCUTS = [
-        'CommandOrControl+Shift+V',
-        'CommandOrControl+Alt+V',
-        'CommandOrControl+Shift+Space',
+      const VOICE_PAIRS = [
+        { primary: 'CommandOrControl+Shift+V', fallback: 'CommandOrControl+Alt+V' },
+        { primary: 'CommandOrControl+Shift+Space', fallback: 'CommandOrControl+Alt+Space' },
       ];
+
+      const registerWithFallback = (primary: string, fallback: string, callback: () => void) => {
+        try {
+          if (!globalShortcut.isRegistered(primary)) {
+            const success = globalShortcut.register(primary, callback);
+            if (success) {
+              logger.info(`[voiceRoute] Registered global shortcut: ${primary}`);
+            } else {
+              logger.warn(`Shortcut [${primary}] failed to register. It may be intercepted by the OS.`);
+              if (!globalShortcut.isRegistered(fallback)) {
+                const fallbackSuccess = globalShortcut.register(fallback, callback);
+                if (fallbackSuccess) {
+                  logger.info(`[voiceRoute] Registered fallback global shortcut: ${fallback}`);
+                } else {
+                  logger.warn(`Shortcut [${fallback}] failed to register. It may be intercepted by the OS.`);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn(`[voiceRoute] Could not register shortcut pair [${primary}] / [${fallback}]:`, err);
+        }
+      };
+
       try {
         if (input.enabled) {
-          SHORTCUTS.forEach((shortcut) => {
-            if (!globalShortcut.isRegistered(shortcut)) {
-              globalShortcut.register(shortcut, () => {
-                const currentSettings = SettingStore.getStore();
-                if (currentSettings.googleApiSource === 'agent_builder') {
-                  toggleHiBeeAgentWindow();
-                } else {
-                  windowManager.broadcast('voice:toggle-listen', null);
-                }
-                logger.info(`[voiceRoute] Hotkey ${shortcut} fired`);
-              });
+          const onToggleVoice = () => {
+            const currentSettings = SettingStore.getStore();
+            if (currentSettings.googleApiSource === 'agent_builder') {
+              toggleHiBeeAgentWindow();
+            } else {
+              windowManager.broadcast('voice:toggle-listen', null);
             }
+            logger.info('[voiceRoute] Dynamic Voice toggle hotkey fired');
+          };
+
+          VOICE_PAIRS.forEach((pair) => {
+            registerWithFallback(pair.primary, pair.fallback, onToggleVoice);
           });
         } else {
-          SHORTCUTS.forEach((shortcut) => {
-            if (globalShortcut.isRegistered(shortcut)) {
-              globalShortcut.unregister(shortcut);
+          VOICE_PAIRS.forEach((pair) => {
+            try {
+              if (globalShortcut.isRegistered(pair.primary)) {
+                globalShortcut.unregister(pair.primary);
+              }
+              if (globalShortcut.isRegistered(pair.fallback)) {
+                globalShortcut.unregister(pair.fallback);
+              }
+            } catch (err) {
+              logger.warn(`[voiceRoute] Could not unregister hotkey:`, err);
             }
           });
         }

@@ -502,7 +502,13 @@ export function useCloudSTT({
           sumSquares += val * val;
         }
         const rms = Math.sqrt(sumSquares / bufferLength);
-        const speechThreshold = 0.015;
+        
+        // VAD threshold optimized for standard background noise:
+        // - Older threshold (0.015) was causing misses for quieter or slightly distant speech.
+        // - Newer threshold (0.010) is more forgiving.
+        // - To convert RMS to Decibels: dB = 20 * Math.log10(rms). 
+        //   An RMS of 0.010 corresponds to approximately -40dB amplitude.
+        const speechThreshold = 0.010;
 
         // Interrupt TTS if user speaks during speaking state
         if (avatarStateRef.current === 'speaking') {

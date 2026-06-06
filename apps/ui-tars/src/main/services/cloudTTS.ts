@@ -41,16 +41,16 @@ interface VoiceConfig {
  * Falls back through Neural2 → WaveNet → Standard.
  */
 const VOICE_MAP: Record<string, VoiceConfig> = {
-  // Indian regional languages — FEMALE Wavenet/Neural2/Standard voices (best quality)
-  'te-IN': { name: 'te-IN-Standard-A',  languageCode: 'te-IN' },  // FEMALE (Standard-A is the supported female voice in GCP)
-  'hi-IN': { name: 'hi-IN-Neural2-A',   languageCode: 'hi-IN' },  // FEMALE
-  'ta-IN': { name: 'ta-IN-Wavenet-A',   languageCode: 'ta-IN' },  // FEMALE
-  'kn-IN': { name: 'kn-IN-Wavenet-A',   languageCode: 'kn-IN' },  // FEMALE
-  'ml-IN': { name: 'ml-IN-Wavenet-A',   languageCode: 'ml-IN' },  // FEMALE
-  'mr-IN': { name: 'mr-IN-Wavenet-A',   languageCode: 'mr-IN' },  // FEMALE (Wavenet is supported and higher quality)
-  'bn-IN': { name: 'bn-IN-Wavenet-A',   languageCode: 'bn-IN' },  // FEMALE (Wavenet is supported and higher quality)
-  'gu-IN': { name: 'gu-IN-Wavenet-A',   languageCode: 'gu-IN' },  // FEMALE (Wavenet is supported and higher quality)
-  'pa-IN': { name: 'pa-IN-Wavenet-A',   languageCode: 'pa-IN' },  // FEMALE (Wavenet is supported and higher quality)
+  // Indian regional languages — FEMALE Chirp 3 HD voices (highest quality)
+  'te-IN': { name: 'te-IN-Chirp3-HD-Achernar',  languageCode: 'te-IN' },  // FEMALE (Highest quality Telugu voice in GCP)
+  'hi-IN': { name: 'hi-IN-Chirp3-HD-Achernar',  languageCode: 'hi-IN' },  // FEMALE
+  'ta-IN': { name: 'ta-IN-Chirp3-HD-Achernar',  languageCode: 'ta-IN' },  // FEMALE
+  'kn-IN': { name: 'kn-IN-Chirp3-HD-Achernar',  languageCode: 'kn-IN' },  // FEMALE
+  'ml-IN': { name: 'ml-IN-Chirp3-HD-Achernar',  languageCode: 'ml-IN' },  // FEMALE
+  'mr-IN': { name: 'mr-IN-Chirp3-HD-Achernar',  languageCode: 'mr-IN' },  // FEMALE
+  'bn-IN': { name: 'bn-IN-Chirp3-HD-Achernar',  languageCode: 'bn-IN' },  // FEMALE
+  'gu-IN': { name: 'gu-IN-Chirp3-HD-Achernar',  languageCode: 'gu-IN' },  // FEMALE
+  'pa-IN': { name: 'pa-IN-Chirp3-HD-Achernar',  languageCode: 'pa-IN' },  // FEMALE
   // English variants — FEMALE Neural2 voices
   'en-IN': { name: 'en-IN-Neural2-A',  languageCode: 'en-IN' },  // FEMALE
   'en-US': { name: 'en-US-Neural2-F',  languageCode: 'en-US' },

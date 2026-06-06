@@ -21,11 +21,44 @@ const SpeechRecognition =
 const RESTART_MIN_MS = 800;
 
 interface UseVoiceVADOptions {
+  /**
+   * Silence duration in milliseconds before committing an utterance.
+   * Default: 1500ms (Adjusted to be more forgiving for slow or paused speaking).
+   */
   silenceMs?: number;
+
+  /**
+   * Decibel sensitivity threshold for Voice Activity Detection (VAD).
+   * More negative values (e.g. -50dB) are more sensitive and trigger on quieter sounds.
+   * Recommended range: -45dB to -40dB to ignore low-level background noise.
+   */
+  decibelThreshold?: number;
+
   onCommit: (transcript: string) => void;  // called when utterance is committed
   onInterrupt?: () => void;                 // called when user speaks over TTS
   onPermissionDenied?: () => void;
 }
+
+/**
+ * ARCHITECTURAL RECOMMENDATION:
+ * To replace continuous VAD polling (which has high CPU overhead and is prone
+ * to background noise interference) with a lightweight local wake-word listener:
+ * 
+ * 1. Install Picovoice Porcupine:
+ *    `npm install @picovoice/porcupine-web` (renderer) or `@picovoice/porcupine-node` (main)
+ * 2. In this hook, create a Web Worker for Porcupine:
+ *    ```typescript
+ *    const porcupineWorker = await PorcupineWorker.create(
+ *      "${accessKey}",
+ *      BuiltInKeyword.Porcupine, // or custom keyword like 'Hi Bee'
+ *      keywordDetectionCallback
+ *    );
+ *    ```
+ * 3. Feed the MediaStreamAudioSourceNode directly to the Porcupine worker.
+ * 4. This runs keyword matching locally in WebAssembly with < 1% CPU utilization
+ *    and completely bypasses continuous Web Audio level polling and network-based STT wake checks.
+ */
+
 
 export function useVoiceVAD({ onCommit, onInterrupt, onPermissionDenied }: UseVoiceVADOptions) {
   const { avatarState, selectedLanguage, setLiveTranscript, setAvatarState } = useVoiceStore();

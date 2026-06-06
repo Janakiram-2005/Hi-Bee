@@ -51,6 +51,7 @@ export function VoiceSettings() {
   const [autoStart, setAutoStart] = useState(false);
   const [hotkeyLabel, setHotkeyLabel] = useState('Ctrl+Shift+V');
   const [wakePhrase, setLocalWakePhrase] = useState('hey hibee');
+  const [useTeluguVoice, setUseTeluguVoice] = useState(false);
 
   // Load settings from electron-store
   useEffect(() => {
@@ -64,6 +65,7 @@ export function VoiceSettings() {
       if (typeof s?.voiceHotkey === 'string' && s.voiceHotkey.trim()) setHotkeyLabel(s.voiceHotkey);
       if (s?.voiceWakeupMode) setWakeupMode(s.voiceWakeupMode);
       if (s?.voiceWakePhrase) { setWakePhrase(s.voiceWakePhrase); setLocalWakePhrase(s.voiceWakePhrase); }
+      if (typeof s?.useTeluguVoice === 'boolean') setUseTeluguVoice(s.useTeluguVoice);
     }).catch(() => {});
   }, [setLanguage, setVoice, setWakeupMode, setWakePhrase]);
 
@@ -80,7 +82,22 @@ export function VoiceSettings() {
   const handleLanguageChange = (val: string) => {
     setLanguage(val);
     setVoice(''); // reset accent
-    save({ voiceLanguage: val, voiceAccent: '', voiceAccentUri: '' });
+    const isTe = val === 'te-IN';
+    setUseTeluguVoice(isTe);
+    save({ voiceLanguage: val, voiceAccent: '', voiceAccentUri: '', useTeluguVoice: isTe });
+  };
+
+  const handleTeluguVoiceToggle = (val: boolean) => {
+    setUseTeluguVoice(val);
+    if (val) {
+      setLanguage('te-IN');
+      setVoice('');
+      save({ useTeluguVoice: true, voiceLanguage: 'te-IN', voiceAccent: '', voiceAccentUri: '' });
+    } else {
+      setLanguage('en-US');
+      setVoice('');
+      save({ useTeluguVoice: false, voiceLanguage: 'en-US', voiceAccent: '', voiceAccentUri: '' });
+    }
   };
 
   const handleVoiceChange = (uri: string) => {
@@ -133,6 +150,20 @@ export function VoiceSettings() {
           <kbd className="px-1.5 py-0.5 rounded text-xs bg-background border border-border font-mono">{hotkeyLabel}</kbd>{' '}
           anywhere on your computer to toggle HI-Bee.
         </p>
+      </div>
+
+      {/* Telugu Language Toggle */}
+      <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border bg-muted/20">
+        <div className="flex gap-3">
+          <Globe className="h-5 w-5 text-violet-500 mt-0.5" />
+          <div>
+            <Label className="text-sm font-medium">Primary Telugu Voice (te-IN)</Label>
+            <p className="text-xs text-muted-foreground mt-1">
+              Enable Telugu as the primary recognition and high-fidelity text-to-speech voice.
+            </p>
+          </div>
+        </div>
+        <Switch checked={useTeluguVoice} onCheckedChange={handleTeluguVoiceToggle} />
       </div>
 
       {/* Language */}

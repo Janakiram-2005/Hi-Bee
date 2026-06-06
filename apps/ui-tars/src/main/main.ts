@@ -38,6 +38,7 @@ import { SettingStore } from './store/setting';
 import { createTray } from './tray';
 import { registerSettingsHandlers } from './services/settings';
 import { sanitizeState } from './utils/sanitizeState';
+import { stopActiveAgentRun } from './services/stopAgentRun';
 import { windowManager } from './services/windowManager';
 import { checkBrowserAvailability } from './services/browserCheck';
 import { mongoService } from './services/mongoService';
@@ -137,58 +138,71 @@ const initializeApp = async () => {
   // Connect MongoDB (non-blocking — app works even if this fails)
   mongoService.connect().catch((err) => logger.warn('[main] MongoDB connect failed:', err));
 
-  // Register voice hotkeys (Ctrl+Shift+V, Ctrl+Alt+V, Ctrl+Shift+Space) — can also be toggled via settings
-  const VOICE_SHORTCUTS = [
-    'CommandOrControl+Shift+V',
-    'CommandOrControl+Alt+V',
-    'CommandOrControl+Shift+Space',
-  ];
-  VOICE_SHORTCUTS.forEach((shortcut) => {
+  // Helper to register global shortcuts with fallback and error logging
+  const registerWithFallback = (primary: string, fallback: string, callback: () => void) => {
     try {
-      const success = globalShortcut.register(shortcut, () => {
-        logger.info(`[main] Hotkey ${shortcut} fired!`);
-        
-        const currentSettings = SettingStore.getStore();
-        if (currentSettings.googleApiSource === 'agent_builder') {
-          toggleHiBeeAgentWindow();
-        } else {
-          if (!currentSettings.voiceEnabled) {
-            SettingStore.set('voiceEnabled', true);
-          }
-          
-          let win = getVoiceWindow();
-          if (!win || win.isDestroyed()) {
-            win = createVoiceWindow();
-          }
-          
-          if (win && !win.isDestroyed()) {
-            win.showInactive();
-          }
-          
-          windowManager.broadcast('voice:toggle-listen', null);
-        }
-      });
+      const success = globalShortcut.register(primary, callback);
       if (success) {
-        logger.info(`[main] Registered global shortcut: ${shortcut}`);
+        logger.info(`[main] Registered global shortcut: ${primary}`);
+        return true;
       } else {
-        logger.warn(`[main] Failed to register global shortcut: ${shortcut}`);
+        logger.warn(`Shortcut [${primary}] failed to register. It may be intercepted by the OS.`);
+        
+        // Attempt fallback registration
+        const fallbackSuccess = globalShortcut.register(fallback, callback);
+        if (fallbackSuccess) {
+          logger.info(`[main] Registered fallback global shortcut: ${fallback}`);
+          return true;
+        } else {
+          logger.warn(`Shortcut [${fallback}] failed to register. It may be intercepted by the OS.`);
+          return false;
+        }
       }
     } catch (err) {
-      logger.warn(`[main] Could not register voice shortcut ${shortcut}:`, err);
+      logger.warn(`[main] Could not register global shortcut [${primary}] or [${fallback}]:`, err);
+      return false;
     }
+  };
+
+  // Toggle Voice callback
+  const onToggleVoice = () => {
+    logger.info('[main] Voice toggle hotkey fired!');
+    const currentSettings = SettingStore.getStore();
+    if (currentSettings.googleApiSource === 'agent_builder') {
+      toggleHiBeeAgentWindow();
+    } else {
+      if (!currentSettings.voiceEnabled) {
+        SettingStore.set('voiceEnabled', true);
+      }
+      
+      let win = getVoiceWindow();
+      if (!win || win.isDestroyed()) {
+        win = createVoiceWindow();
+      }
+      
+      if (win && !win.isDestroyed()) {
+        win.showInactive();
+      }
+      
+      windowManager.broadcast('voice:toggle-listen', null);
+    }
+  };
+
+  // Register Voice toggles with fallbacks
+  registerWithFallback('CommandOrControl+Shift+V', 'CommandOrControl+Alt+V', onToggleVoice);
+  registerWithFallback('CommandOrControl+Shift+Space', 'CommandOrControl+Alt+Space', onToggleVoice);
+
+  // Register Toggle Agent chat window with fallback (Ctrl+Shift+H / Ctrl+Alt+H)
+  registerWithFallback('CommandOrControl+Shift+H', 'CommandOrControl+Alt+H', () => {
+    logger.info('[main] Toggling Hi-Bee Agent window');
+    toggleHiBeeAgentWindow();
   });
 
-  // ── Global shortcut: Ctrl+Shift+H = toggle Hi-Bee Agent chat window ────────
-  try {
-    const success = globalShortcut.register('CommandOrControl+Shift+H', () => {
-      logger.info('[main] Ctrl+Shift+H: toggling Hi-Bee Agent window');
-      toggleHiBeeAgentWindow();
-    });
-    if (success) logger.info('[main] Registered Hi-Bee Agent shortcut: Ctrl+Shift+H');
-    else logger.warn('[main] Failed to register Ctrl+Shift+H');
-  } catch (err) {
-    logger.warn('[main] Could not register Ctrl+Shift+H:', err);
-  }
+  // Register Stop Action command with fallback (Ctrl+Shift+S / Ctrl+Alt+S)
+  registerWithFallback('CommandOrControl+Shift+S', 'CommandOrControl+Alt+S', () => {
+    logger.info('[main] Global shortcut: stopping active agent run');
+    stopActiveAgentRun();
+  });
 
   // Send app launched event
   await UTIOService.getInstance().appLaunched();
