@@ -99,5 +99,22 @@ export const agentRoute = t.router({
       currentAction: null,
       currentStep: 0,
     });
+
+    try {
+      const { mongoService } = await import('@main/services/mongoService');
+      if (mongoService.isConnected()) {
+        await mongoService.clearActiveAgentState().catch((err) => {
+          console.warn(
+            '[ipcRoutes/agent] Failed to clear active agent state from DB:',
+            err,
+          );
+        });
+      }
+    } catch (err) {
+      console.warn(
+        '[ipcRoutes/agent] Failed to import mongoService for clearHistory:',
+        err,
+      );
+    }
   }),
 });

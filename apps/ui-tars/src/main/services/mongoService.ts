@@ -159,7 +159,9 @@ class MongoService {
   // ─── Task Knowledge Base ─────────────────────────────────────────────────
 
   /** Create or fully replace a task's 10-step knowledge base */
-  public async upsertTaskKnowledge(data: Omit<TaskKnowledge, '_id' | 'createdAt' | 'updatedAt'>): Promise<void> {
+  public async upsertTaskKnowledge(
+    data: Omit<TaskKnowledge, '_id' | 'createdAt' | 'updatedAt'>,
+  ): Promise<void> {
     try {
       const now = new Date();
       await this.taskKnowledge().updateOne(
@@ -222,7 +224,9 @@ class MongoService {
 
   // ─── Active Agent State ──────────────────────────────────────────────────
 
-  public async saveActiveAgentState(data: Omit<ActiveAgentState, '_id' | 'updatedAt'>): Promise<void> {
+  public async saveActiveAgentState(
+    data: Omit<ActiveAgentState, '_id' | 'updatedAt'>,
+  ): Promise<void> {
     try {
       if (!this.isConnected()) return;
       await this.activeStates().updateOne(
@@ -233,7 +237,7 @@ class MongoService {
             updatedAt: new Date(),
           },
         },
-        { upsert: true }
+        { upsert: true },
       );
     } catch (err) {
       logger.warn('[MongoService] saveActiveAgentState failed:', err);
@@ -247,6 +251,16 @@ class MongoService {
     } catch (err) {
       logger.warn('[MongoService] getLatestActiveAgentState failed:', err);
       return null;
+    }
+  }
+
+  public async clearActiveAgentState(): Promise<void> {
+    try {
+      if (!this.isConnected()) return;
+      await this.activeStates().deleteMany({});
+      logger.info('[MongoService] Cleared active agent states from DB');
+    } catch (err) {
+      logger.warn('[MongoService] clearActiveAgentState failed:', err);
     }
   }
 }
