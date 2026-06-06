@@ -6,7 +6,7 @@
  * live transcript, language/voice selector, and Task KB viewer.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Mic, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause } from 'lucide-react';
+import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause } from 'lucide-react';
 import { useVoiceStore } from '@renderer/store/voiceStore';
 import { RobotAvatar } from './RobotAvatar';
 import { api } from '@renderer/api';
@@ -357,6 +357,20 @@ export function VoicePanel({
 
         {/* Actions/Controls Row */}
         <div className="voice-controls-row">
+          {/* Start/Stop Mic Button */}
+          <button
+            type="button"
+            className={`voice-ctrl-btn ${isListening ? 'active' : ''}`}
+            onClick={onToggleMic}
+            title={isListening ? 'Stop Listening' : 'Start Listening'}
+            style={{
+              color: isListening ? '#ef4444' : undefined,
+              borderColor: isListening ? '#dc2626' : undefined,
+              background: isListening ? 'rgba(239, 68, 68, 0.15)' : undefined,
+            }}
+          >
+            {isListening ? <Mic size={16} strokeWidth={1.5} className="listening-pulse" /> : <MicOff size={16} strokeWidth={1.5} />}
+          </button>
 
           {/* Mute toggle */}
           <button
