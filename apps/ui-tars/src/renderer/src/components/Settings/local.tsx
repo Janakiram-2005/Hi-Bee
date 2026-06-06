@@ -7,6 +7,7 @@ import {
 } from '@renderer/components/ui/dialog';
 import { Button } from '@renderer/components/ui/button';
 import { LocalStore } from '@main/store/validate';
+import { VLMProviderV2 } from '@main/store/types';
 
 import { VLMSettings, VLMSettingsRef } from './category/vlm';
 import { useRef } from 'react';
@@ -22,9 +23,28 @@ export const checkVLMSettings = async () => {
 
   const currentSetting = ((await settingRpc.getSetting()) ||
     {}) as Partial<LocalStore>;
-  const { vlmApiKey, vlmBaseUrl, vlmModelName, vlmProvider } = currentSetting;
+  const {
+    vlmApiKey,
+    vlmBaseUrl,
+    vlmModelName,
+    vlmProvider,
+    vertexProjectId,
+    vertexLocation,
+    vertexModelName,
+  } = currentSetting;
 
-  if (vlmApiKey && vlmBaseUrl && vlmModelName && vlmProvider) {
+  if (!vlmProvider) {
+    return false;
+  }
+
+  if (vlmProvider === VLMProviderV2.gemini_vertex) {
+    if (vertexProjectId && vertexLocation && vertexModelName) {
+      return true;
+    }
+    return false;
+  }
+
+  if (vlmApiKey && vlmBaseUrl && vlmModelName) {
     return true;
   }
 
@@ -49,7 +69,7 @@ export const LocalSettingsDialog = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[480]">
+      <DialogContent className="max-w-[480px]">
         <DialogHeader>
           <DialogTitle>VLM Settings</DialogTitle>
           <DialogDescription>
@@ -57,8 +77,10 @@ export const LocalSettingsDialog = ({
             or browser.
           </DialogDescription>
         </DialogHeader>
-        <VLMSettings ref={vlmSettingsRef} />
-        <Button className="mt-8 mx-8" onClick={handleGetStart}>
+        <div className="max-h-[60vh] overflow-y-auto pr-2">
+          <VLMSettings ref={vlmSettingsRef} />
+        </div>
+        <Button className="mt-4 mx-8" onClick={handleGetStart}>
           Get Start
         </Button>
       </DialogContent>

@@ -25,4 +25,20 @@ export const permissionRoute = t.router({
     );
     return store.getState().ensurePermissions;
   }),
+
+  /** Called once at voice-window startup to prompt for OS permissions before listening. */
+  bootstrapPermissions: t.procedure.input<void>().handle(async () => {
+    if (env.isMacOS) {
+      const { ensurePermissions } = await import(
+        '@main/utils/systemPermissions'
+      );
+      const perms = ensurePermissions();
+      store.setState({ ensurePermissions: perms });
+      return perms;
+    }
+
+    const perms = { screenCapture: true, accessibility: true };
+    store.setState({ ensurePermissions: perms });
+    return perms;
+  }),
 });

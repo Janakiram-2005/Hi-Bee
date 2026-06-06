@@ -33,7 +33,12 @@ export type AppState = {
   abortController: AbortController | null;
   thinking: boolean;
   browserAvailable: boolean;
+  /** Human-readable description of the action currently being executed, e.g. "click · [450, 320]" */
+  currentAction: string | null;
+  /** 0-based index of the current step within the active run */
+  currentStep: number;
 };
+
 
 export enum VlmProvider {
   // Ollama = 'ollama',
@@ -46,6 +51,7 @@ export enum VLMProviderV2 {
   ui_tars_1_5 = 'Hugging Face for UI-TARS-1.5',
   doubao_1_5 = 'VolcEngine Ark for Doubao-1.5-UI-TARS',
   doubao_1_5_vl = 'VolcEngine Ark for Doubao-1.5-thinking-vision-pro',
+  gemini_vertex = 'Google Vertex AI Gemini',
 }
 
 export enum SearchEngineForSettings {

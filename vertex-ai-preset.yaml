@@ -1,0 +1,26 @@
+# UI-TARS Desktop Preset Configuration for Google Vertex AI Gemini
+# You can import this file via: Settings -> VLM Settings -> Import Preset Config
+
+# ── VLM Provider Selection ────────────────────────────────────────────────────
+vlmProvider: "Google Vertex AI Gemini"
+
+# ── Google Cloud Project Configuration ─────────────────────────────────────────
+# The project ID of your Google Cloud Platform project.
+vertexProjectId: "convertionalai"
+
+# The location/region where Vertex AI Gemini is deployed.
+vertexLocation: "us-central1"
+
+# The Gemini model to use. Choices: gemini-2.5-flash, gemini-2.5-pro
+vertexModelName: "gemini-2.5-flash"
+
+# Path to service account key JSON file.
+# Leave blank to use GOOGLE_APPLICATION_CREDENTIALS or auto-detect.
+vertexServiceAccountPath: ""
+
+# ── General Settings (Optional) ───────────────────────────────────────────────
+operator: "local_computer"
+loopIntervalInMs: 1000
+screenshotScale: 1
+maxLoopCount: 100
+language: "en"

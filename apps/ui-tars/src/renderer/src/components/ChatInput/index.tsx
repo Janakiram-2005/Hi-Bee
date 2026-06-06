@@ -50,6 +50,11 @@ const ChatInput = ({
   const { settings, updateSetting } = useSetting();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const running = status === StatusEnum.RUNNING;
+  // Show stop in all active states — not only RUNNING
+  const isActive =
+    status === StatusEnum.RUNNING ||
+    status === StatusEnum.CALL_USER ||
+    status === StatusEnum.PAUSE;
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -154,17 +159,21 @@ const ChatInput = ({
     await stopAgentRuning(() => {
       setLocalInstructions('');
     });
-    await api.clearHistory();
+    // Only clear history when actually running — preserves conversation on call_user stop
+    if (status === StatusEnum.RUNNING || status === StatusEnum.PAUSE) {
+      await api.clearHistory();
+    }
   };
 
   const renderButton = () => {
-    if (running) {
+    if (isActive) {
       return (
         <Button
           variant="secondary"
           size="icon"
           className="h-8 w-8"
           onClick={stopRun}
+          title={status === StatusEnum.CALL_USER ? 'Stop agent (waiting for input)' : 'Stop agent'}
         >
           <Square className="h-4 w-4" />
         </Button>
@@ -223,9 +232,9 @@ const ChatInput = ({
                   ? lastHumanMessage
                   : 'What can I do for you today?'
             }
-            className="min-h-[120px] rounded-2xl resize-none px-4 pb-16" // 调整内边距
+            className="min-h-[120px] rounded-2xl resize-none px-4 pb-16"
             value={localInstructions}
-            disabled={running || disabled}
+            disabled={isActive || disabled}
             onChange={(e) => setLocalInstructions(e.target.value)}
             onKeyDown={handleKeyDown}
           />

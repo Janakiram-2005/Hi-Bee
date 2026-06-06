@@ -55,8 +55,11 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
     this.operator = config.operator;
 
     this.model =
-      config.model instanceof UITarsModel
-        ? config.model
+      config.model instanceof UITarsModel ||
+      (typeof config.model === 'object' &&
+        config.model !== null &&
+        typeof (config.model as { invoke?: unknown }).invoke === 'function')
+        ? (config.model as InstanceType<typeof UITarsModel>)
         : new UITarsModel(config.model);
     this.logger = config.logger || console;
     this.uiTarsVersion = config.uiTarsVersion;
@@ -127,7 +130,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
 
     try {
       // eslint-disable-next-line no-constant-condition
-      while (true) {
+      agentLoop: while (true) {
         logger.info('[GUIAgent] loopCnt:', loopCnt);
         // check pause status
         if (this.isPaused && this.resumePromise) {
@@ -294,7 +297,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
           },
           {
             retries: retry?.model?.maxRetries ?? 0,
-            minTimeout: 1000 * 30,
+            minTimeout: 1000,
             onRetry: retry?.model?.onRetry,
           },
         );
@@ -417,7 +420,7 @@ export class GUIAgent<T extends Operator> extends BaseGUIAgent<
             break;
           } else if (actionType === INTERNAL_ACTION_SPACES_ENUM.FINISHED) {
             data.status = StatusEnum.END;
-            break;
+            break agentLoop;
           }
         }
 

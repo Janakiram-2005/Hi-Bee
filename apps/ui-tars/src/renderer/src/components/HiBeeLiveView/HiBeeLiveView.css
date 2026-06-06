@@ -1,0 +1,379 @@
+/*
+ * HiBeeLiveView.css — Premium animated styles for the Hi-Bee Smart Live View.
+ * Replaces the old UI-TARS screenshot viewer panel.
+ *
+ * Design: Glassmorphism + neon accents + smooth state transitions
+ */
+
+/* ── Root container ──────────────────────────────────────────────────────────── */
+.hblv-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(13, 17, 23, 0.97) 0%, rgba(22, 27, 34, 0.97) 100%);
+  border: 1px solid color-mix(in srgb, var(--hblv-color, #6366f1) 35%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 0 32px color-mix(in srgb, var(--hblv-color, #6366f1) 12%, transparent);
+  backdrop-filter: blur(16px);
+  animation: hblv-enter 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle shimmer line at top */
+.hblv-root::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--hblv-color, #6366f1) 60%, transparent) 50%,
+    transparent 100%);
+  animation: hblv-shimmer 2.5s ease-in-out infinite;
+}
+
+/* ── Top row ─────────────────────────────────────────────────────────────────── */
+.hblv-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Robot icon with pulse ring ─────────────────────────────────────────────── */
+.hblv-icon-ring {
+  position: relative;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hblv-robot-icon {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 0 4px var(--hblv-color, #6366f1));
+}
+
+.hblv-ring-pulse {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--hblv-color, #6366f1);
+  opacity: 0;
+  animation: hblv-ring 1.8s ease-out infinite;
+}
+
+/* ── Status area ─────────────────────────────────────────────────────────────── */
+.hblv-status-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  animation: hblv-slide-in 0.25s ease-out both;
+}
+
+.hblv-status-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.hblv-status-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ── Waveform bars ───────────────────────────────────────────────────────────── */
+.hblv-waveform {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+  margin-left: 4px;
+}
+
+.hblv-bar {
+  display: inline-block;
+  width: 3px;
+  border-radius: 2px;
+  animation: hblv-wave 0.8s ease-in-out infinite alternate;
+}
+
+.hblv-bar:nth-child(1) { height: 4px; }
+.hblv-bar:nth-child(2) { height: 8px; }
+.hblv-bar:nth-child(3) { height: 12px; }
+.hblv-bar:nth-child(4) { height: 8px; }
+.hblv-bar:nth-child(5) { height: 4px; }
+
+/* ── Meta info (step + elapsed) ─────────────────────────────────────────────── */
+.hblv-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hblv-step-badge {
+  font-size: 11px;
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.12);
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(100, 116, 139, 0.2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hblv-elapsed {
+  font-size: 11px;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Abort / Stop button ─────────────────────────────────────────────────────── */
+.hblv-abort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hblv-abort-btn:hover {
+  background: rgba(248, 113, 113, 0.18);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fca5a5;
+}
+.hblv-abort-btn.aborting {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Action args row ─────────────────────────────────────────────────────────── */
+.hblv-args-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hblv-args-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #4b5563;
+  flex-shrink: 0;
+}
+
+.hblv-args-value {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Error row ───────────────────────────────────────────────────────────────── */
+.hblv-error-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 12px;
+  color: #fca5a5;
+}
+
+.hblv-retry-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.hblv-retry-btn:hover {
+  background: rgba(248, 113, 113, 0.25);
+}
+
+/* ── call_user row ───────────────────────────────────────────────────────────── */
+.hblv-calluser-row {
+  font-size: 12px;
+  color: #fbbf24;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  animation: hblv-pulse-text 2s ease-in-out infinite;
+}
+
+/* ── Step progress dots ──────────────────────────────────────────────────────── */
+.hblv-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.hblv-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  transition: all 0.25s ease;
+}
+
+.hblv-dot.done {
+  background: var(--hblv-color, #6366f1);
+  opacity: 0.9;
+  box-shadow: 0 0 4px var(--hblv-color, #6366f1);
+}
+
+.hblv-dot.active {
+  background: var(--hblv-color, #6366f1);
+  opacity: 1;
+  transform: scale(1.5);
+  animation: hblv-dot-active 0.9s ease-in-out infinite alternate;
+  box-shadow: 0 0 8px var(--hblv-color, #6366f1);
+}
+
+.hblv-dot.pending {
+  background: rgba(100, 116, 139, 0.25);
+}
+
+.hblv-dot-more {
+  font-size: 10px;
+  color: #475569;
+  margin-left: 2px;
+}
+
+/* ── Screenshot thumbnail ────────────────────────────────────────────────────── */
+.hblv-screenshot-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.hblv-thumb-img {
+  width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+.hblv-thumb-img:hover { opacity: 1; }
+
+.hblv-thumb-label {
+  font-size: 10px;
+  color: #4b5563;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Animation state modifiers ───────────────────────────────────────────────── */
+
+/* Scanning: sweeping glow */
+.hblv-anim-scan .hblv-root::after,
+.hblv-anim-scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--hblv-color) 8%, transparent), transparent);
+  animation: hblv-scan-sweep 1.5s linear infinite;
+  pointer-events: none;
+}
+
+/* Click: fast ripple pulse */
+.hblv-anim-click .hblv-ring-pulse {
+  animation: hblv-ring 0.6s ease-out infinite;
+}
+
+/* Spin: rotating indicator (thinking) */
+.hblv-anim-spin .hblv-robot-icon {
+  animation: hblv-spin 2s linear infinite;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────── */
+/* Keyframes                                                                     */
+/* ────────────────────────────────────────────────────────────────────────────── */
+
+@keyframes hblv-enter {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes hblv-slide-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes hblv-shimmer {
+  0%, 100% { opacity: 0.4; transform: scaleX(0.5) translateX(-50%); }
+  50%       { opacity: 1;   transform: scaleX(1) translateX(0); }
+}
+
+@keyframes hblv-ring {
+  0%   { opacity: 0.9; transform: scale(1); }
+  100% { opacity: 0;   transform: scale(2); }
+}
+
+@keyframes hblv-wave {
+  from { transform: scaleY(0.4); opacity: 0.5; }
+  to   { transform: scaleY(1);   opacity: 1; }
+}
+
+@keyframes hblv-dot-active {
+  from { transform: scale(1.5);  box-shadow: 0 0 6px var(--hblv-color, #6366f1); }
+  to   { transform: scale(1.9);  box-shadow: 0 0 12px var(--hblv-color, #6366f1); }
+}
+
+@keyframes hblv-scan-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+@keyframes hblv-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes hblv-pulse-text {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}

@@ -31,7 +31,8 @@ const moveStraightTo = async (startX: number | null, startY: number | null) => {
   if (startX === null || startY === null) {
     return;
   }
-  await mouse.move(straightTo(new Point(startX, startY)));
+  // Teleport cursor instantly to exact rounded integer coordinates to eliminate animation drift
+  await mouse.setPosition(new Point(Math.round(startX), Math.round(startY)));
 };
 export class NutJSOperator extends Operator {
   static MANUAL = {
@@ -108,7 +109,7 @@ export class NutJSOperator extends Operator {
     logger.info(`[NutjsOperator Position]: (${startX}, ${startY})`);
 
     // execute configs
-    mouse.config.mouseSpeed = 3600;
+    mouse.config.mouseSpeed = 4800;
 
     // if (startBoxStr) {
     //   const region = await nutScreen.highlight(
@@ -228,7 +229,7 @@ export class NutJSOperator extends Operator {
             // 先移动鼠标到 startX, startY 位置
             await moveStraightTo(startX, startY);
             await sleep(100);
-            await mouse.drag(straightTo(new Point(endX, endY)));
+            await mouse.drag(straightTo(new Point(Math.round(endX), Math.round(endY))));
           }
         }
         break;
@@ -303,6 +304,12 @@ export class NutJSOperator extends Operator {
             break;
           case 'down':
             await mouse.scrollDown(5 * 100);
+            break;
+          case 'left':
+            await mouse.scrollLeft(5 * 100);
+            break;
+          case 'right':
+            await mouse.scrollRight(5 * 100);
             break;
           default:
             console.warn(

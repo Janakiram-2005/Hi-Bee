@@ -6,9 +6,8 @@ import { initIpc } from '@ui-tars/electron-ipc/main';
 import { StatusEnum, Conversation, Message } from '@ui-tars/shared/types';
 import { store } from '@main/store/create';
 import { runAgent } from '@main/services/runAgent';
-import { showWindow } from '@main/window/index';
+import { stopActiveAgentRun } from '@main/services/stopAgentRun';
 
-import { closeScreenMarker } from '@main/window/ScreenMarker';
 import { GUIAgent } from '@ui-tars/sdk';
 import { Operator } from '@ui-tars/sdk/core';
 
@@ -73,19 +72,7 @@ export const agentRoute = t.router({
     }
   }),
   stopRun: t.procedure.input<void>().handle(async () => {
-    const { abortController } = store.getState();
-    store.setState({ status: StatusEnum.END, thinking: false });
-
-    showWindow();
-
-    abortController?.abort();
-    const guiAgent = GUIAgentManager.getInstance().getAgent();
-    if (guiAgent instanceof GUIAgent) {
-      guiAgent.resume();
-      guiAgent.stop();
-    }
-
-    closeScreenMarker();
+    stopActiveAgentRun();
   }),
   setInstructions: t.procedure
     .input<{ instructions: string }>()
@@ -109,6 +96,8 @@ export const agentRoute = t.router({
       thinking: false,
       errorMsg: null,
       instructions: '',
+      currentAction: null,
+      currentStep: 0,
     });
   }),
 });

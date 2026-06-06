@@ -15,9 +15,9 @@ import {
   hideScreenWaterFlow,
   hideWidgetWindow,
   showScreenWaterFlow,
-  showWidgetWindow,
+  // showWidgetWindow,
 } from '../window/ScreenMarker';
-import { hideMainWindow, showMainWindow } from '../window';
+import { hideMainWindow /*, showMainWindow */ } from '../window';
 import { SearchEngine } from '@ui-tars/operator-browser';
 
 export const getModelVersion = (
@@ -32,6 +32,10 @@ export const getModelVersion = (
       return UITarsModelVersion.DOUBAO_1_5_15B;
     case VLMProviderV2.doubao_1_5_vl:
       return UITarsModelVersion.DOUBAO_1_5_20B;
+    case VLMProviderV2.gemini_vertex:
+      // Gemini supports long context; use V1_5 for the largest system prompt
+      // and 65535-token output budget.
+      return UITarsModelVersion.V1_5;
     default:
       return UITarsModelVersion.V1_0;
   }
@@ -60,20 +64,39 @@ export const getLocalBrowserSearchEngine = (
   return (engine || SearchEngineForSettings.GOOGLE) as unknown as SearchEngine;
 };
 
-export const beforeAgentRun = async (operator: Operator) => {
+export type AgentRunOptions = {
+  /** Voice/background runs: keep main UI hidden and do not restore it after the run. */
+  background?: boolean;
+};
+
+let lastRunWasBackground = false;
+
+export const setRunBackground = (background: boolean) => {
+  lastRunWasBackground = background;
+};
+
+export const wasBackgroundRun = () => lastRunWasBackground;
+
+export const beforeAgentRun = async (
+  operator: Operator,
+  options: AgentRunOptions = {},
+) => {
+  const { background = false } = options;
+  setRunBackground(background);
+
   switch (operator) {
     case Operator.RemoteComputer:
       break;
     case Operator.RemoteBrowser:
       break;
     case Operator.LocalComputer:
-      showWidgetWindow();
+      // showWidgetWindow();
       showScreenWaterFlow();
       hideMainWindow();
       break;
     case Operator.LocalBrowser:
       hideMainWindow();
-      showWidgetWindow();
+      // showWidgetWindow();
       break;
     default:
       break;
@@ -81,6 +104,8 @@ export const beforeAgentRun = async (operator: Operator) => {
 };
 
 export const afterAgentRun = (operator: Operator) => {
+  // const restoreMainWindow = !wasBackgroundRun();
+
   switch (operator) {
     case Operator.RemoteComputer:
       break;
@@ -90,13 +115,19 @@ export const afterAgentRun = (operator: Operator) => {
       hideWidgetWindow();
       closeScreenMarker();
       hideScreenWaterFlow();
-      showMainWindow();
+      // if (restoreMainWindow) {
+      //   showMainWindow();
+      // }
       break;
     case Operator.LocalBrowser:
       hideWidgetWindow();
-      showMainWindow();
+      // if (restoreMainWindow) {
+      //   showMainWindow();
+      // }
       break;
     default:
       break;
   }
+
+  setRunBackground(false);
 };

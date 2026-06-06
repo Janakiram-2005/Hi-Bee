@@ -269,10 +269,15 @@ class ScreenMarker {
     </html>
     `);
 
-          // max 5s close overlay
+          // auto-close: 3 s for click actions, 5 s for others
+          const isClickAction = predictions.some((p) =>
+            ['click', 'left_click', 'left_single', 'left_double', 'double_click', 'right_click', 'right_single'].includes(
+              (p as any).action_type ?? (p as any).type ?? '',
+            ),
+          );
           setTimeout(() => {
             this.closeOverlay();
-          }, 5000);
+          }, isClickAction ? 3000 : 5000);
         }
       } catch (error) {
         logger.error('[showPredictionMarker] 显示预测标记失败:', error);
@@ -299,6 +304,79 @@ class ScreenMarker {
     if (this.currentOverlay) {
       this.currentOverlay.close();
       this.currentOverlay = null;
+    }
+  }
+
+  /**
+   * Show a brief animated pulsing ring at the given screen coordinates
+   * to visually indicate where the VLM is about to click.
+   *
+   * @param x           Logical screen X (pixels).
+   * @param y           Logical screen Y (pixels).
+   * @param lifetimeMs  How long the ring stays visible (default 800 ms).
+   */
+  showClickRing(x: number, y: number, lifetimeMs = 800): void {
+    const SIZE = 48; // ring diameter in logical px
+    const HALF = SIZE / 2;
+    try {
+      const ringWin = new BrowserWindow({
+        width: SIZE,
+        height: SIZE,
+        x: Math.round(x - HALF),
+        y: Math.round(y - HALF),
+        transparent: true,
+        frame: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        focusable: false,
+        hasShadow: false,
+        thickFrame: false,
+        paintWhenInitiallyHidden: true,
+        type: 'panel',
+        webPreferences: { nodeIntegration: true, contextIsolation: false },
+      });
+
+      ringWin.blur();
+      ringWin.setFocusable(false);
+      ringWin.setContentProtection(true);
+      ringWin.setIgnoreMouseEvents(true, { forward: true });
+
+      if (env.isWindows) {
+        ringWin.setAlwaysOnTop(true, 'screen-saver');
+      }
+
+      ringWin.loadURL(`data:text/html;charset=UTF-8,
+<html>
+<head>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: ${SIZE}px; height: ${SIZE}px; background: transparent; overflow: hidden; }
+  .ring {
+    width: ${SIZE}px;
+    height: ${SIZE}px;
+    border-radius: 50%;
+    border: 3px solid rgba(72, 255, 140, 0.95);
+    box-shadow: 0 0 12px rgba(72, 255, 140, 0.7), inset 0 0 6px rgba(72, 255, 140, 0.3);
+    animation: pulse ${lifetimeMs}ms ease-out forwards;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.3); opacity: 1; }
+    60%  { transform: scale(1.1); opacity: 0.9; }
+    100% { transform: scale(1.4); opacity: 0; }
+  }
+</style>
+</head>
+<body><div class="ring"></div></body>
+</html>`);
+
+      // Auto-close after lifetime
+      setTimeout(() => {
+        try { ringWin.close(); } catch (_) { /* already closed */ }
+      }, lifetimeMs + 50);
+
+      logger.info(`[ScreenMarker] showClickRing at (${x}, ${y}) for ${lifetimeMs}ms`);
+    } catch (err) {
+      logger.warn('[ScreenMarker] showClickRing failed:', err);
     }
   }
 }
@@ -335,4 +413,11 @@ export const hideScreenWaterFlow = () => {
 
 export const closeOverlay = () => {
   ScreenMarker.getInstance().closeOverlay();
+};
+
+/**
+ * Show a pulsing green ring at (x, y) to indicate an imminent VLM click.
+ */
+export const showClickRing = (x: number, y: number, lifetimeMs = 800) => {
+  ScreenMarker.getInstance().showClickRing(x, y, lifetimeMs);
 };

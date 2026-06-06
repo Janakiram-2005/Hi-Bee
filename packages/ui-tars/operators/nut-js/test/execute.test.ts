@@ -13,7 +13,7 @@ import {
   mouse,
   straightTo,
 } from '@computer-use/nut-js';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NutJSOperator } from '../src/index';
 
@@ -59,6 +59,10 @@ vi.mock('@computer-use/nut-js', async (importOriginal) => {
       RIGHT: 'right',
       MIDDLE: 'middle',
     },
+    clipboard: {
+      getContent: vi.fn().mockResolvedValue(''),
+      setContent: vi.fn().mockResolvedValue(undefined),
+    },
     Point: actual.Point,
     Region: actual.Region,
     straightTo: vi.fn((point) => point),
@@ -69,6 +73,23 @@ vi.mock('@computer-use/nut-js', async (importOriginal) => {
 });
 
 describe('execute', () => {
+  let originalPlatform: string;
+
+  beforeAll(() => {
+    originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+      configurable: true,
+    });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(process, 'platform', {
+      value: originalPlatform,
+      configurable: true,
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });

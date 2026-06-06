@@ -2,12 +2,14 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 
 import { logger } from '@main/logger';
 import * as env from '@main/env';
 
+import { SettingStore } from '@main/store/setting';
 import { createWindow } from './createWindow';
+import { closeVoiceWindow } from './voiceWindow';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -24,12 +26,13 @@ export function show() {
   }
 }
 
-export function createMainWindow() {
+export function createMainWindow(options?: { showInBackground?: boolean }) {
   mainWindow = createWindow({
     routerPath: '/',
     width: 1200,
     height: 700,
     alwaysOnTop: false,
+    showInBackground: options?.showInBackground,
   });
 
   mainWindow.on('close', (event) => {
@@ -49,7 +52,15 @@ export function createMainWindow() {
         mainWindow?.hide();
       }
     } else {
-      mainWindow = null;
+      const currentSettings = SettingStore.getStore();
+      if (currentSettings.voiceEnabled) {
+        event.preventDefault();
+        mainWindow?.hide();
+      } else {
+        mainWindow = null;
+        closeVoiceWindow();
+        app.quit();
+      }
     }
   });
 

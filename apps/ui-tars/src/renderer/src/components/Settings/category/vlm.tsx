@@ -35,15 +35,73 @@ import { cn } from '@renderer/utils';
 import { PresetImport, PresetBanner } from './preset';
 import { api } from '@/renderer/src/api';
 
-const formSchema = z.object({
-  vlmProvider: z.nativeEnum(VLMProviderV2, {
-    message: 'Please select a VLM Provider to enhance resolution',
-  }),
-  vlmBaseUrl: z.string().url(),
-  vlmApiKey: z.string().min(1),
-  vlmModelName: z.string().min(1),
-  useResponsesApi: z.boolean().default(false),
-});
+const formSchema = z
+  .object({
+    vlmProvider: z.nativeEnum(VLMProviderV2, {
+      message: 'Please select a VLM Provider to enhance resolution',
+    }).optional().or(z.literal('')),
+    vlmBaseUrl: z.string().optional(),
+    vlmApiKey: z.string().optional(),
+    vlmModelName: z.string().optional(),
+    useResponsesApi: z.boolean().default(false),
+    // Vertex AI settings
+    vertexProjectId: z.string().optional(),
+    vertexLocation: z.string().optional(),
+    vertexModelName: z.string().optional(),
+    vertexChatModelName: z.string().optional(),
+    googleApiSource: z.enum(['direct', 'agent_builder']).optional(),
+    vertexServiceAccountPath: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.vlmProvider === VLMProviderV2.gemini_vertex) {
+      if (!data.vertexProjectId || data.vertexProjectId.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vertexProjectId'],
+          message: 'Google Cloud Project ID is required for Vertex AI',
+        });
+      }
+      if (!data.vertexLocation || data.vertexLocation.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vertexLocation'],
+          message: 'Google Cloud Location is required for Vertex AI',
+        });
+      }
+    } else if (data.vlmProvider) {
+      if (!data.vlmBaseUrl || data.vlmBaseUrl.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vlmBaseUrl'],
+          message: 'VLM Base URL is required',
+        });
+      } else {
+        try {
+          new URL(data.vlmBaseUrl);
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['vlmBaseUrl'],
+            message: 'Please enter a valid URL',
+          });
+        }
+      }
+      if (!data.vlmApiKey || data.vlmApiKey.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vlmApiKey'],
+          message: 'VLM API Key is required',
+        });
+      }
+      if (!data.vlmModelName || data.vlmModelName.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vlmModelName'],
+          message: 'VLM Model Name is required',
+        });
+      }
+    }
+  });
 
 export interface VLMSettingsRef {
   submit: () => Promise<z.infer<typeof formSchema>>;
@@ -67,6 +125,7 @@ export function VLMSettings({
     boolean | null
   >(null);
   const [isCheckingResponseApi, setIsCheckingResponseApi] = useState(false);
+  const [lastSettingsStr, setLastSettingsStr] = useState('');
 
   const isRemoteAutoUpdatedPreset =
     settings?.presetSource?.type === 'remote' &&
@@ -80,28 +139,75 @@ export function VLMSettings({
       vlmApiKey: '',
       vlmModelName: '',
       useResponsesApi: false,
+      vertexProjectId: '',
+      vertexLocation: 'us-central1',
+      vertexModelName: 'gemini-2.5-flash',
+      vertexChatModelName: 'gemini-2.5-flash',
+      googleApiSource: 'direct',
+      vertexServiceAccountPath: '',
     },
   });
+
   useEffect(() => {
     if (Object.keys(settings).length) {
-      form.reset({
+      const currentSettingsStr = JSON.stringify({
         vlmProvider: settings.vlmProvider,
-        vlmBaseUrl: settings.vlmBaseUrl,
-        vlmApiKey: settings.vlmApiKey,
-        vlmModelName: settings.vlmModelName,
-        useResponsesApi: settings.useResponsesApi,
+        vlmBaseUrl: settings.vlmBaseUrl || '',
+        vlmApiKey: settings.vlmApiKey || '',
+        vlmModelName: settings.vlmModelName || '',
+        useResponsesApi: settings.useResponsesApi || false,
+        vertexProjectId: settings.vertexProjectId || '',
+        vertexLocation: settings.vertexLocation || 'us-central1',
+        vertexModelName: settings.vertexModelName || 'gemini-2.5-flash',
+        vertexChatModelName: settings.vertexChatModelName || 'gemini-2.5-flash',
+        googleApiSource: settings.googleApiSource || 'direct',
+        vertexServiceAccountPath: settings.vertexServiceAccountPath || '',
       });
-    }
-  }, [settings, form]);
 
-  const [newProvider, newBaseUrl, newApiKey, newModelName, newUseResponsesApi] =
-    form.watch([
-      'vlmProvider',
-      'vlmBaseUrl',
-      'vlmApiKey',
-      'vlmModelName',
-      'useResponsesApi',
-    ]);
+      if (currentSettingsStr !== lastSettingsStr) {
+        form.reset({
+          vlmProvider: settings.vlmProvider,
+          vlmBaseUrl: settings.vlmBaseUrl || '',
+          vlmApiKey: settings.vlmApiKey || '',
+          vlmModelName: settings.vlmModelName || '',
+          useResponsesApi: settings.useResponsesApi || false,
+          vertexProjectId: settings.vertexProjectId || '',
+          vertexLocation: settings.vertexLocation || 'us-central1',
+          vertexModelName: settings.vertexModelName || 'gemini-2.5-flash',
+          vertexChatModelName: settings.vertexChatModelName || 'gemini-2.5-flash',
+          googleApiSource: settings.googleApiSource || 'direct',
+          vertexServiceAccountPath: settings.vertexServiceAccountPath || '',
+        });
+        setLastSettingsStr(currentSettingsStr);
+      }
+    }
+  }, [settings, lastSettingsStr, form]);
+
+  const [
+    newProvider,
+    newBaseUrl,
+    newApiKey,
+    newModelName,
+    newUseResponsesApi,
+    newVertexProjectId,
+    newVertexLocation,
+    newVertexModelName,
+    newVertexServiceAccountPath,
+    newVertexChatModelName,
+    newGoogleApiSource,
+  ] = form.watch([
+    'vlmProvider',
+    'vlmBaseUrl',
+    'vlmApiKey',
+    'vlmModelName',
+    'useResponsesApi',
+    'vertexProjectId',
+    'vertexLocation',
+    'vertexModelName',
+    'vertexServiceAccountPath',
+    'vertexChatModelName',
+    'googleApiSource',
+  ]);
 
   useEffect(() => {
     if (!autoSave) {
@@ -123,39 +229,124 @@ export function VLMSettings({
       return;
     }
 
-    const validAndSave = async () => {
-      if (newProvider !== settings.vlmProvider) {
-        updateSetting({ ...settings, vlmProvider: newProvider });
+    const timer = setTimeout(async () => {
+      let changed = false;
+      const nextSettings = { ...settings };
+
+      const nextProvider = newProvider === '' ? undefined : newProvider;
+      if (nextProvider !== settings.vlmProvider) {
+        nextSettings.vlmProvider = nextProvider;
+        changed = true;
       }
 
-      const isUrlValid = await form.trigger('vlmBaseUrl');
-      if (isUrlValid && newBaseUrl !== settings.vlmBaseUrl) {
-        updateSetting({ ...settings, vlmBaseUrl: newBaseUrl });
+      if (newProvider === VLMProviderV2.gemini_vertex) {
+        const isProjectIdValid = await form.trigger('vertexProjectId');
+        if (
+          isProjectIdValid &&
+          newVertexProjectId !== undefined &&
+          newVertexProjectId !== settings.vertexProjectId
+        ) {
+          nextSettings.vertexProjectId = newVertexProjectId;
+          changed = true;
+        }
+
+        const isLocationValid = await form.trigger('vertexLocation');
+        if (
+          isLocationValid &&
+          newVertexLocation !== undefined &&
+          newVertexLocation !== settings.vertexLocation
+        ) {
+          nextSettings.vertexLocation = newVertexLocation;
+          changed = true;
+        }
+
+        const isModelNameValid = await form.trigger('vertexModelName');
+        if (
+          isModelNameValid &&
+          newVertexModelName !== undefined &&
+          newVertexModelName !== settings.vertexModelName
+        ) {
+          nextSettings.vertexModelName = newVertexModelName;
+          changed = true;
+        }
+
+        const isChatModelNameValid = await form.trigger('vertexChatModelName');
+        if (
+          isChatModelNameValid &&
+          newVertexChatModelName !== undefined &&
+          newVertexChatModelName !== settings.vertexChatModelName
+        ) {
+          nextSettings.vertexChatModelName = newVertexChatModelName;
+          changed = true;
+        }
+
+        const isGoogleApiSourceValid = await form.trigger('googleApiSource');
+        if (
+          isGoogleApiSourceValid &&
+          newGoogleApiSource !== undefined &&
+          newGoogleApiSource !== settings.googleApiSource
+        ) {
+          nextSettings.googleApiSource = newGoogleApiSource;
+          changed = true;
+        }
+
+        const isSAValid = await form.trigger('vertexServiceAccountPath');
+        if (
+          isSAValid &&
+          newVertexServiceAccountPath !== undefined &&
+          newVertexServiceAccountPath !== settings.vertexServiceAccountPath
+        ) {
+          nextSettings.vertexServiceAccountPath = newVertexServiceAccountPath;
+          changed = true;
+        }
+      } else {
+        const isUrlValid = await form.trigger('vlmBaseUrl');
+        if (
+          isUrlValid &&
+          newBaseUrl !== undefined &&
+          newBaseUrl !== settings.vlmBaseUrl
+        ) {
+          nextSettings.vlmBaseUrl = newBaseUrl;
+          changed = true;
+        }
+
+        const isKeyValid = await form.trigger('vlmApiKey');
+        if (
+          isKeyValid &&
+          newApiKey !== undefined &&
+          newApiKey !== settings.vlmApiKey
+        ) {
+          nextSettings.vlmApiKey = newApiKey;
+          changed = true;
+        }
+
+        const isNameValid = await form.trigger('vlmModelName');
+        if (
+          isNameValid &&
+          newModelName !== undefined &&
+          newModelName !== settings.vlmModelName
+        ) {
+          nextSettings.vlmModelName = newModelName;
+          changed = true;
+        }
+
+        const isResponsesApiValid = await form.trigger('useResponsesApi');
+        if (
+          isResponsesApiValid &&
+          newUseResponsesApi !== undefined &&
+          newUseResponsesApi !== settings.useResponsesApi
+        ) {
+          nextSettings.useResponsesApi = newUseResponsesApi;
+          changed = true;
+        }
       }
 
-      const isKeyValid = await form.trigger('vlmApiKey');
-      if (isKeyValid && newApiKey !== settings.vlmApiKey) {
-        updateSetting({ ...settings, vlmApiKey: newApiKey });
+      if (changed) {
+        updateSetting(nextSettings);
       }
+    }, 500);
 
-      const isNameValid = await form.trigger('vlmModelName');
-      if (isNameValid && newModelName !== settings.vlmModelName) {
-        updateSetting({ ...settings, vlmModelName: newModelName });
-      }
-
-      const isResponsesApiValid = await form.trigger('useResponsesApi');
-      if (
-        isResponsesApiValid &&
-        newUseResponsesApi !== settings.useResponsesApi
-      ) {
-        updateSetting({
-          ...settings,
-          useResponsesApi: newUseResponsesApi,
-        });
-      }
-    };
-
-    validAndSave();
+    return () => clearTimeout(timer);
   }, [
     autoSave,
     newProvider,
@@ -163,6 +354,10 @@ export function VLMSettings({
     newApiKey,
     newModelName,
     newUseResponsesApi,
+    newVertexProjectId,
+    newVertexLocation,
+    newVertexModelName,
+    newVertexServiceAccountPath,
     settings,
     updateSetting,
     form,
@@ -182,7 +377,6 @@ export function VLMSettings({
 
     try {
       await updatePresetFromRemote();
-      // toast.success('Preset updated successfully');
     } catch (error) {
       toast.error('Failed to update preset', {
         description:
@@ -206,9 +400,9 @@ export function VLMSettings({
       if (responseApiSupported === null) {
         setIsCheckingResponseApi(true);
         const modelConfig = {
-          baseUrl: newBaseUrl,
-          apiKey: newApiKey,
-          modelName: newModelName,
+          baseUrl: newBaseUrl || '',
+          apiKey: newApiKey || '',
+          modelName: newModelName || '',
         };
 
         if (
@@ -242,8 +436,11 @@ export function VLMSettings({
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     console.log('onSubmit', values);
-
-    updateSetting({ ...settings, ...values });
+    const apiValues = {
+      ...values,
+      vlmProvider: values.vlmProvider === '' ? undefined : values.vlmProvider,
+    };
+    await updateSetting({ ...settings, ...apiValues });
     toast.success('Settings saved successfully');
   };
 
@@ -251,9 +448,13 @@ export function VLMSettings({
     submit: async () => {
       return new Promise<z.infer<typeof formSchema>>((resolve, reject) => {
         form.handleSubmit(
-          (values) => {
-            onSubmit(values);
-            resolve(values);
+          async (values) => {
+            try {
+              await onSubmit(values);
+              resolve(values);
+            } catch (error) {
+              reject(error);
+            }
           },
           (errors) => {
             reject(errors);
@@ -315,120 +516,287 @@ export function VLMSettings({
               );
             }}
           />
-          {/* VLM Base URL */}
-          <FormField
-            control={form.control}
-            name="vlmBaseUrl"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>VLM Base URL</FormLabel>
-                <FormControl>
-                  <Input
-                    className="bg-white"
-                    placeholder="Enter VLM Base URL"
-                    {...field}
-                    disabled={isRemoteAutoUpdatedPreset}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          {/* VLM API Key */}
-          <FormField
-            control={form.control}
-            name="vlmApiKey"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>VLM API Key</FormLabel>
-                <FormControl>
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? 'text' : 'password'}
-                      className="bg-white"
-                      placeholder="Enter VLM API_Key"
-                      {...field}
+
+          {newProvider === VLMProviderV2.gemini_vertex ? (
+            <>
+              {/* Vertex Project ID */}
+              <FormField
+                control={form.control}
+                name="vertexProjectId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Google Cloud Project ID</FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-white"
+                        placeholder="Enter Google Cloud Project ID"
+                        {...field}
+                        disabled={isRemoteAutoUpdatedPreset}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Vertex Location */}
+              <FormField
+                control={form.control}
+                name="vertexLocation"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Google Cloud Location</FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-white"
+                        placeholder="Enter Google Cloud Location (e.g. us-central1)"
+                        {...field}
+                        disabled={isRemoteAutoUpdatedPreset}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Vertex Model Name */}
+              <FormField
+                control={form.control}
+                name="vertexModelName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Vertex AI Model Name</FormLabel>
+                    <Select
                       disabled={isRemoteAutoUpdatedPreset}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowPassword(!showPassword)}
-                      disabled={isRemoteAutoUpdatedPreset}
+                      onValueChange={field.onChange}
+                      value={field.value}
                     >
-                      {showPassword ? (
-                        <Eye className="h-4 w-4 text-gray-500" />
-                      ) : (
-                        <EyeOff className="h-4 w-4 text-gray-500" />
-                      )}
-                    </Button>
-                  </div>
-                </FormControl>
-              </FormItem>
-            )}
-          />
-          {/* VLM Model Name */}
-          <FormField
-            control={form.control}
-            name="vlmModelName"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>VLM Model Name</FormLabel>
-                <FormControl>
-                  <Input
-                    className="bg-white"
-                    placeholder="Enter VLM Model Name"
-                    {...field}
-                    disabled={isRemoteAutoUpdatedPreset}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
-          />
+                      <SelectTrigger className="w-full bg-white">
+                        <SelectValue placeholder="Select Gemini model name" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gemini-2.5-pro">gemini-2.5-pro ★ (Recommended)</SelectItem>
+                        <SelectItem value="gemini-2.5-flash">gemini-2.5-flash (Fast)</SelectItem>
+                        <SelectItem value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Fastest)</SelectItem>
+                        <SelectItem value="gemini-2.0-pro">gemini-2.0-pro</SelectItem>
+                        <SelectItem value="gemini-2.0-flash">gemini-2.0-flash</SelectItem>
+                        <SelectItem value="gemini-1.5-pro">gemini-1.5-pro</SelectItem>
+                        <SelectItem value="gemini-1.5-flash">gemini-1.5-flash (Stable)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Google API Source */}
+              <FormField
+                control={form.control}
+                name="googleApiSource"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Google API Mode / Source</FormLabel>
+                    <Select
+                      disabled={isRemoteAutoUpdatedPreset}
+                      onValueChange={field.onChange}
+                      value={field.value || 'direct'}
+                    >
+                      <SelectTrigger className="w-full bg-white">
+                        <SelectValue placeholder="Select API Source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="direct">Google Vertex AI Gemini (Direct API)</SelectItem>
+                        <SelectItem value="agent_builder">Google Conversational AI (Agent Builder Chat)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Vertex Chat Model Name */}
+              {form.watch('googleApiSource') !== 'agent_builder' && (
+                <FormField
+                  control={form.control}
+                  name="vertexChatModelName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Voice Agent Model Name</FormLabel>
+                      <Select
+                        disabled={isRemoteAutoUpdatedPreset}
+                        onValueChange={field.onChange}
+                        value={field.value || 'gemini-2.5-flash'}
+                      >
+                        <SelectTrigger className="w-full bg-white">
+                          <SelectValue placeholder="Select Gemini voice model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="gemini-2.5-pro">gemini-2.5-pro (Highly Intelligent)</SelectItem>
+                          <SelectItem value="gemini-2.5-flash">gemini-2.5-flash (Fast & Conversational)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {/* Vertex Service Account Path */}
+              <FormField
+                control={form.control}
+                name="vertexServiceAccountPath"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Service Account JSON Path (Optional)</FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-white"
+                        placeholder="Enter absolute path or leave blank for auto-detect"
+                        {...field}
+                        disabled={isRemoteAutoUpdatedPreset}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </>
+          ) : (
+            <>
+              {/* VLM Base URL */}
+              <FormField
+                control={form.control}
+                name="vlmBaseUrl"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>VLM Base URL</FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-white"
+                        placeholder="Enter VLM Base URL"
+                        {...field}
+                        disabled={isRemoteAutoUpdatedPreset}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* VLM API Key */}
+              <FormField
+                control={form.control}
+                name="vlmApiKey"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>VLM API Key</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          className="bg-white"
+                          placeholder="Enter VLM API_Key"
+                          {...field}
+                          disabled={isRemoteAutoUpdatedPreset}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword(!showPassword)}
+                          disabled={isRemoteAutoUpdatedPreset}
+                        >
+                          {showPassword ? (
+                            <Eye className="h-4 w-4 text-gray-500" />
+                          ) : (
+                            <EyeOff className="h-4 w-4 text-gray-500" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {/* VLM Model Name */}
+              <FormField
+                control={form.control}
+                name="vlmModelName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>VLM Model Name</FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-white"
+                        placeholder="Enter VLM Model Name"
+                        {...field}
+                        disabled={isRemoteAutoUpdatedPreset}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </>
+          )}
 
           {/* Model Availability Check */}
           <ModelAvailabilityCheck
-            modelConfig={{
-              baseUrl: newBaseUrl,
-              apiKey: newApiKey,
-              modelName: newModelName,
-            }}
+            modelConfig={
+              newProvider === VLMProviderV2.gemini_vertex
+                ? {
+                    baseUrl: '',
+                    apiKey: '',
+                    modelName: newVertexModelName || '',
+                    provider: newProvider,
+                    vertexProjectId: newVertexProjectId,
+                    vertexLocation: newVertexLocation,
+                    vertexModelName: newVertexModelName,
+                    vertexServiceAccountPath: newVertexServiceAccountPath,
+                  }
+                : {
+                    baseUrl: newBaseUrl || '',
+                    apiKey: newApiKey || '',
+                    modelName: newModelName || '',
+                    provider: newProvider,
+                  }
+            }
             onResponseApiSupportChange={setResponseApiSupported}
           />
 
           {/* VLM Model Responses API */}
-          <FormField
-            control={form.control}
-            name="useResponsesApi"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Use Responses API</FormLabel>
-                <FormControl>
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      checked={field.value}
-                      disabled={switchDisabled}
-                      onCheckedChange={handleResponseApiChange}
-                      className={cn(switchDisabled && '!cursor-not-allowed')}
-                    />
-                    {responseApiSupported === false && (
-                      <p className="text-sm text-red-500">
-                        Response API is not supported by this model
-                      </p>
-                    )}
-                    {isCheckingResponseApi && (
-                      <p className="text-sm text-muted-foreground flex items-center">
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Checking Response API support...
-                      </p>
-                    )}
-                  </div>
-                </FormControl>
-              </FormItem>
-            )}
-          />
+          {newProvider !== VLMProviderV2.gemini_vertex && (
+            <FormField
+              control={form.control}
+              name="useResponsesApi"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Use Responses API</FormLabel>
+                  <FormControl>
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={field.value}
+                        disabled={switchDisabled}
+                        onCheckedChange={handleResponseApiChange}
+                        className={cn(switchDisabled && '!cursor-not-allowed')}
+                      />
+                      {responseApiSupported === false && (
+                        <p className="text-sm text-red-500">
+                          Response API is not supported by this model
+                        </p>
+                      )}
+                      {isCheckingResponseApi && (
+                        <p className="text-sm text-muted-foreground flex items-center">
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                          Checking Response API support...
+                        </p>
+                      )}
+                    </div>
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          )}
         </form>
       </Form>
 
@@ -445,6 +813,11 @@ interface ModelAvailabilityCheckProps {
     baseUrl: string;
     apiKey: string;
     modelName: string;
+    provider?: string;
+    vertexProjectId?: string;
+    vertexLocation?: string;
+    vertexModelName?: string;
+    vertexServiceAccountPath?: string;
   };
   disabled?: boolean;
   className?: string;
@@ -467,13 +840,16 @@ export function ModelAvailabilityCheck({
 }: ModelAvailabilityCheckProps) {
   const [checkState, setCheckState] = useState<CheckState>({ status: 'idle' });
 
-  const { baseUrl, apiKey, modelName } = modelConfig;
-  const isConfigValid = baseUrl && apiKey && modelName;
+  const { baseUrl, apiKey, modelName, provider, vertexProjectId, vertexLocation } =
+    modelConfig;
+  const isConfigValid =
+    provider === VLMProviderV2.gemini_vertex
+      ? !!(vertexProjectId && vertexLocation && modelName)
+      : !!(baseUrl && apiKey && modelName);
 
   useEffect(() => {
     if (checkState.status === 'success' || checkState.status === 'error') {
       setTimeout(() => {
-        // Find the nearest scrollable container
         const scrollContainer = document.querySelector(
           '[data-radix-scroll-area-viewport]',
         );
@@ -501,35 +877,48 @@ export function ModelAvailabilityCheck({
     setCheckState({ status: 'checking' });
 
     try {
-      const [isAvailable, responseApiSupported] = await Promise.all([
-        api.checkModelAvailability(modelConfig),
-        api.checkVLMResponseApiSupport(modelConfig),
-      ]);
-
-      onResponseApiSupportChange?.(responseApiSupported);
-
-      if (isAvailable) {
-        const successMessage = `Model "${modelName}" is available and working correctly${
-          responseApiSupported
-            ? '. Response API is supported.'
-            : '. But Response API is not supported.'
-        }`;
-        setCheckState({
-          status: 'success',
-          message: successMessage,
-          responseApiSupported,
-        });
-        console.log('[VLM Model Check] Success:', modelConfig, {
-          responseApiSupported,
-        });
+      if (provider === VLMProviderV2.gemini_vertex) {
+        const isAvailable = await api.checkModelAvailability(modelConfig);
+        onResponseApiSupportChange?.(false);
+        if (isAvailable) {
+          setCheckState({
+            status: 'success',
+            message: `Model "${modelName}" is available and Vertex AI Gemini client authenticated successfully!`,
+            responseApiSupported: false,
+          });
+        } else {
+          setCheckState({
+            status: 'error',
+            message: `Model "${modelName}" is not responding correctly. Check Project ID and region permissions.`,
+          });
+        }
       } else {
-        const errorMessage = `Model "${modelName}" is not responding correctly`;
-        setCheckState({
-          status: 'error',
-          message: errorMessage,
-          responseApiSupported,
-        });
-        console.error('[VLM Model Check] Model not responding:', modelConfig);
+        const [isAvailable, responseApiSupported] = await Promise.all([
+          api.checkModelAvailability(modelConfig),
+          api.checkVLMResponseApiSupport(modelConfig),
+        ]);
+
+        onResponseApiSupportChange?.(responseApiSupported);
+
+        if (isAvailable) {
+          const successMessage = `Model "${modelName}" is available and working correctly${
+            responseApiSupported
+              ? '. Response API is supported.'
+              : '. But Response API is not supported.'
+          }`;
+          setCheckState({
+            status: 'success',
+            message: successMessage,
+            responseApiSupported,
+          });
+        } else {
+          const errorMessage = `Model "${modelName}" is not responding correctly`;
+          setCheckState({
+            status: 'error',
+            message: errorMessage,
+            responseApiSupported,
+          });
+        }
       }
     } catch (error) {
       const errorMessage =
@@ -542,11 +931,6 @@ export function ModelAvailabilityCheck({
       });
 
       onResponseApiSupportChange?.(false);
-
-      console.error('[VLM Model Check] Error:', error, {
-        baseUrl,
-        modelName,
-      });
     }
   };
 

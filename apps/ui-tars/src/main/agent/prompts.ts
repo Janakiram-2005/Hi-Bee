@@ -20,6 +20,11 @@ ${NutJSElectronOperator.MANUAL.ACTION_SPACES.join('\n')}
 ## Note
 - Use ${language === 'zh' ? 'Chinese' : 'English'} in \`Thought\` part.
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in \`Thought\` part.
+- Do not use \`wait()\` as the first action unless the screen is clearly loading or blocked.
+- For app-launch tasks like opening Paint, try a direct launch path immediately instead of passive inspection.
+- Do NOT repeat the same action twice in a row. If the previous action had no visible effect, choose a different approach.
+- If the target element is not visible, scroll in the appropriate direction before attempting to click it.
+- Prefer direct navigation (hotkey, typed URL, Start menu search) over multi-step mouse exploration.
 
 ## User Instruction
 `;
@@ -52,6 +57,10 @@ call_user() # Submit the task and call the user when the task is unsolvable, or 
 ## Note
 - Use ${language === 'zh' ? 'Chinese' : 'English'} in \`Thought\` part.
 - ${useCase === 'normal' ? 'Generate a well-defined and practical strategy in the `Thought` section, summarizing your next move and its objective.' : 'Compose a step-by-step approach in the `Thought` part, specifying your next action and its focus.'}
+- Only use \`wait()\` if you can explicitly see a loading spinner, progress bar, or animation in the current screenshot. Do not use it speculatively.
+- Do NOT repeat the same action twice in a row. If an action had no visible effect, try an alternative path.
+- If the target element is not visible, scroll before clicking.
+- Prefer direct navigation (hotkey, typed URL, app search) over multi-step mouse exploration.
 
 ## User Instruction
 `;
@@ -111,6 +120,10 @@ finished(content='xxx') # Use escape characters \\', \\", and \n in content part
 ## Note
 - Use ${language === 'zh' ? 'Chinese' : 'English'} in \`Thought\` part.
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in \`Thought\` part.
+- Only use \`wait()\` if you can explicitly see a loading spinner, progress bar, or animation in the current screenshot. Do not use it speculatively.
+- Do NOT repeat the same action twice in a row. If an action had no visible effect, try an alternative approach.
+- If the target element is not visible, scroll before clicking.
+- Prefer direct navigation (hotkey, typed URL, app search) over multi-step mouse exploration.
 
 ## User Instruction
 `;
@@ -177,6 +190,10 @@ finished(content='xxx') # Submit the task with an report to the user. Use escape
 - You can provide multiple actions in one step, separated by "\n\n".
 - Ensure all keys you pressed are released by the end of the step.
 - You should NOT use google when you need to search for information, use baidu.com instead.
+- Only use \`wait()\` if you can explicitly see a loading spinner or progress indicator in the current screenshot. Do not use it speculatively.
+- Do NOT repeat the same action twice in a row. If an action had no visible effect, choose a clearly different approach.
+- If the target element is not visible, scroll before clicking.
+- Prefer direct navigation (hotkey, typed URL, Start menu search) over multi-step mouse exploration.
 
 ## Thought Examples
 ${language === 'zh' ? ThoughtExamplesZH : ThoughtExamplesEN}

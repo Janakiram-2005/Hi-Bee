@@ -6,6 +6,8 @@ out
 *.log*
 .eslintcache
 .env
+.env.*
+!.env.example
 test-results/
 coverage/
 .turbo/
@@ -13,3 +15,13 @@ scripts/merge-yml/*.yml
 .claude/
 .tarko
 .mcp*_token
+
+# ── Security: NEVER commit GCP service-account keys ──────────────────────────
+*-service-account.json
+*-credentials.json
+*service_account*.json
+convertionalai-*.json
+*.json.key
+service-account-*.json
+# Add your specific key file name here if different:
+convertionalai-d8da9e4d43dd.json

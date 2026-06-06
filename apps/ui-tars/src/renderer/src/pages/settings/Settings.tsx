@@ -43,21 +43,65 @@ import bingIcon from '@resources/icons/bing-color.svg?url';
 import baiduIcon from '@resources/icons/baidu-color.svg?url';
 import { REPO_OWNER, REPO_NAME } from '@main/shared/constants';
 
-// 定义表单验证 schema
-const formSchema = z.object({
-  language: z.enum(['en', 'zh']),
-  vlmProvider: z.nativeEnum(VLMProviderV2, {
-    message: 'Please select a VLM Provider to enhance resolution',
-  }),
-  vlmBaseUrl: z.string().url(),
-  vlmApiKey: z.string().min(1),
-  vlmModelName: z.string().min(1),
-  maxLoopCount: z.number().min(25).max(200),
-  loopIntervalInMs: z.number().min(0).max(3000),
-  searchEngineForBrowser: z.nativeEnum(SearchEngineForSettings),
-  reportStorageBaseUrl: z.string().optional(),
-  utioBaseUrl: z.string().optional(),
-});
+// Form validation schema
+const formSchema = z
+  .object({
+    language: z.enum(['en', 'zh']),
+    vlmProvider: z.nativeEnum(VLMProviderV2, {
+      message: 'Please select a VLM Provider to enhance resolution',
+    }),
+    // OpenAI-compatible fields — required only when NOT using Vertex AI
+    vlmBaseUrl: z.union([z.string().url(), z.literal('')]).optional(),
+    vlmApiKey: z.string().optional(),
+    vlmModelName: z.string().optional(),
+    // Vertex AI Gemini fields
+    vertexProjectId: z.string().optional(),
+    vertexLocation: z.string().optional(),
+    vertexModelName: z.string().optional(),
+    vertexChatModelName: z.string().optional(),
+    googleApiSource: z.enum(['direct', 'agent_builder']).optional(),
+    vertexServiceAccountPath: z.string().optional(),
+    maxLoopCount: z.number().min(25).max(200),
+    loopIntervalInMs: z.number().min(0).max(3000),
+    searchEngineForBrowser: z.nativeEnum(SearchEngineForSettings),
+    reportStorageBaseUrl: z.string().optional(),
+    utioBaseUrl: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    // Validate OpenAI fields only when NOT using Vertex AI
+    if (data.vlmProvider !== VLMProviderV2.gemini_vertex) {
+      if (!data.vlmBaseUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vlmBaseUrl'],
+          message: 'VLM Base URL is required for this provider',
+        });
+      }
+      if (!data.vlmApiKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vlmApiKey'],
+          message: 'VLM API Key is required for this provider',
+        });
+      }
+      if (!data.vlmModelName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vlmModelName'],
+          message: 'VLM Model Name is required for this provider',
+        });
+      }
+    } else {
+      // Validate Vertex AI fields only when Vertex is selected
+      if (!data.vertexProjectId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['vertexProjectId'],
+          message: 'Google Cloud Project ID is required',
+        });
+      }
+    }
+  });
 
 const SECTIONS = {
   vlm: 'VLM Settings',
@@ -122,6 +166,12 @@ export default function Settings() {
       vlmBaseUrl: '',
       vlmApiKey: '',
       vlmModelName: '',
+      vertexProjectId: '',
+      vertexLocation: 'us-central1',
+      vertexModelName: 'gemini-2.5-flash',
+      vertexChatModelName: 'gemini-2.5-flash',
+      googleApiSource: 'direct',
+      vertexServiceAccountPath: '',
       maxLoopCount: 100,
       loopIntervalInMs: 1000,
       reportStorageBaseUrl: '',
@@ -138,6 +188,12 @@ export default function Settings() {
         vlmBaseUrl: settings.vlmBaseUrl,
         vlmApiKey: settings.vlmApiKey,
         vlmModelName: settings.vlmModelName,
+        vertexProjectId: settings.vertexProjectId ?? '',
+        vertexLocation: settings.vertexLocation ?? 'us-central1',
+        vertexModelName: settings.vertexModelName ?? 'gemini-2.5-flash',
+        vertexChatModelName: settings.vertexChatModelName ?? 'gemini-2.5-flash',
+        googleApiSource: settings.googleApiSource ?? 'direct',
+        vertexServiceAccountPath: settings.vertexServiceAccountPath ?? '',
         maxLoopCount: settings.maxLoopCount,
         loopIntervalInMs: settings.loopIntervalInMs,
         searchEngineForBrowser: settings.searchEngineForBrowser,
@@ -176,7 +232,7 @@ export default function Settings() {
     updateSetting(values);
     // toast.success('Settings saved successfully');
     // await api.closeSettingsWindow();
-    await api.showMainWindow();
+    // Do not force-show the main window if voice agent is running in background
   };
 
   const onCancel = async () => {
@@ -333,58 +389,184 @@ export default function Settings() {
                     );
                   }}
                 />
-                {/* VLM Base URL */}
-                <FormField
-                  control={form.control}
-                  name="vlmBaseUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>VLM Base URL</FormLabel>
-                      <FormControl>
-                        <Input
-                          disabled={isRemoteAutoUpdatedPreset}
-                          placeholder="Enter VLM Base URL"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                {/* VLM API Key */}
-                <FormField
-                  control={form.control}
-                  name="vlmApiKey"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>VLM API Key</FormLabel>
-                      <FormControl>
-                        <Input
-                          disabled={isRemoteAutoUpdatedPreset}
-                          placeholder="Enter VLM API_Key"
-                          {...field}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-                {/* VLM Model Name */}
-                <FormField
-                  control={form.control}
-                  name="vlmModelName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>VLM Model Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          disabled={isRemoteAutoUpdatedPreset}
-                          placeholder="Enter VLM Model Name"
-                          {...field}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                {/* VLM Base URL — hidden for Vertex AI */}
+                {form.watch('vlmProvider') !== VLMProviderV2.gemini_vertex && (
+                  <FormField
+                    control={form.control}
+                    name="vlmBaseUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VLM Base URL</FormLabel>
+                        <FormControl>
+                          <Input
+                            disabled={isRemoteAutoUpdatedPreset}
+                            placeholder="Enter VLM Base URL"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                {/* VLM API Key — hidden for Vertex AI */}
+                {form.watch('vlmProvider') !== VLMProviderV2.gemini_vertex && (
+                  <FormField
+                    control={form.control}
+                    name="vlmApiKey"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VLM API Key</FormLabel>
+                        <FormControl>
+                          <Input
+                            disabled={isRemoteAutoUpdatedPreset}
+                            placeholder="Enter VLM API_Key"
+                            {...field}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                )}
+                {/* VLM Model Name — hidden for Vertex AI (uses vertexModelName instead) */}
+                {form.watch('vlmProvider') !== VLMProviderV2.gemini_vertex && (
+                  <FormField
+                    control={form.control}
+                    name="vlmModelName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VLM Model Name</FormLabel>
+                        <FormControl>
+                          <Input
+                            disabled={isRemoteAutoUpdatedPreset}
+                            placeholder="Enter VLM Model Name"
+                            {...field}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* ── Google Vertex AI Gemini Fields ─────────────────────── */}
+                {form.watch('vlmProvider') === VLMProviderV2.gemini_vertex && (
+                  <>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-4">
+                      <p className="text-sm font-semibold text-blue-800 flex items-center gap-2">
+                        <span>🔵</span> Google Vertex AI Gemini Configuration
+                      </p>
+
+                      {/* Project ID */}
+                      <FormField
+                        control={form.control}
+                        name="vertexProjectId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Google Cloud Project ID</FormLabel>
+                            <FormControl>
+                              <Input
+                                disabled={isRemoteAutoUpdatedPreset}
+                                placeholder="e.g. my-gcp-project-123"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Location */}
+                      <FormField
+                        control={form.control}
+                        name="vertexLocation"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Google Cloud Location</FormLabel>
+                            <FormControl>
+                              <Input
+                                disabled={isRemoteAutoUpdatedPreset}
+                                placeholder="e.g. us-central1"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Model Name */}
+                      <FormField
+                        control={form.control}
+                        name="vertexModelName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gemini Model Name</FormLabel>
+                            <Select
+                              disabled={isRemoteAutoUpdatedPreset}
+                              onValueChange={field.onChange}
+                              value={field.value || 'gemini-2.5-flash'}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select Gemini model" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="gemini-2.5-pro">
+                                  gemini-2.5-pro (Most capable · Recommended)
+                                </SelectItem>
+                                <SelectItem value="gemini-2.5-flash">
+                                  gemini-2.5-flash (Fast)
+                                </SelectItem>
+                                <SelectItem value="gemini-2.5-flash-lite">
+                                  gemini-2.5-flash-lite (Fastest)
+                                </SelectItem>
+                                <SelectItem value="gemini-2.0-pro">
+                                  gemini-2.0-pro (Latest Pro)
+                                </SelectItem>
+                                <SelectItem value="gemini-2.0-flash">
+                                  gemini-2.0-flash (Latest Flash)
+                                </SelectItem>
+                                <SelectItem value="gemini-1.5-pro">
+                                  gemini-1.5-pro (Capable)
+                                </SelectItem>
+                                <SelectItem value="gemini-1.5-flash">
+                                  gemini-1.5-flash (Stable)
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Service Account JSON Path */}
+                      <FormField
+                        control={form.control}
+                        name="vertexServiceAccountPath"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              Service Account JSON Path{' '}
+                              <span className="text-gray-400 font-normal">(optional)</span>
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                disabled={isRemoteAutoUpdatedPreset}
+                                placeholder="/absolute/path/to/service-account.json (leave blank for ADC)"
+                                {...field}
+                              />
+                            </FormControl>
+                            <p className="text-xs text-gray-500">
+                              Leave blank to use{' '}
+                              <code className="bg-gray-100 px-1 rounded">GOOGLE_APPLICATION_CREDENTIALS</code>{' '}
+                              env var or Application Default Credentials.
+                            </p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               {/* Chat Settings */}
               <div

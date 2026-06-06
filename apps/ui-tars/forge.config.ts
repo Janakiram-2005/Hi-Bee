@@ -125,7 +125,7 @@ async function cleanSources(
     projectRoot,
   );
   await Promise.all(
-    Array.from(subDependencies.values()).map((subDependency) => {
+    Array.from(subDependencies.values()).map((subDependency: any) => {
       if (
         fs.existsSync(path.join(buildPath, 'node_modules', subDependency.name))
       ) {

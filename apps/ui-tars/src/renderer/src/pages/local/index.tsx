@@ -3,12 +3,6 @@ import { useLocation, useNavigate } from 'react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Card } from '@renderer/components/ui/card';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@renderer/components/ui/tabs';
 import { Button } from '@renderer/components/ui/button';
 import { SidebarTrigger, useSidebar } from '@renderer/components/ui/sidebar';
 import { NavHeader } from '@renderer/components/Detail/NavHeader';
@@ -20,14 +14,11 @@ import Prompts from '../../components/Prompts';
 import { IMAGE_PLACEHOLDER } from '@ui-tars/shared/constants';
 import {
   AssistantTextMessage,
-  ErrorMessage,
   HumanTextMessage,
-  LoadingText,
   ScreenshotMessage,
 } from '../../components/RunMessages/Messages';
 import ThoughtChain from '../../components/ThoughtChain';
 import { api } from '../../api';
-import ImageGallery from '../../components/ImageGallery';
 import { PredictionParsed, StatusEnum } from '@ui-tars/shared/types';
 import { RouterState } from '../../typings';
 import ChatInput from '../../components/ChatInput';
@@ -54,7 +45,6 @@ const LocalOperator = () => {
   const { status, messages = [], thinking, errorMsg } = useStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const suggestions: string[] = [];
-  const [selectImg, setSelectImg] = useState<number | undefined>(undefined);
   const [initId, setInitId] = useState('');
   const {
     currentSessionId,
@@ -117,6 +107,8 @@ const LocalOperator = () => {
     messages.length,
   ]);
 
+
+
   useEffect(() => {
     setTimeout(() => {
       containerRef.current?.scrollIntoView(false);
@@ -127,8 +119,8 @@ const LocalOperator = () => {
     await api.setInstructions({ instructions: suggestion });
   };
 
-  const handleImageSelect = async (index: number) => {
-    setSelectImg(index);
+  const handleImageSelect = async (_index: number) => {
+    // No-op. The right-panel screenshot viewer has been replaced by the inline HiBeeLiveView status banner.
   };
 
   // check status before nav
@@ -212,6 +204,10 @@ const LocalOperator = () => {
     }
   };
 
+  const renderStatusArea = () => {
+    return null;
+  };
+
   const renderChatList = () => {
     return (
       <ScrollArea className="h-full px-4">
@@ -261,8 +257,8 @@ const LocalOperator = () => {
             );
           })}
 
-          {thinking && <LoadingText text={'Thinking...'} />}
-          {errorMsg && <ErrorMessage text={errorMsg} />}
+          {/* Status area replaces old generic thinking/error lines */}
+          {renderStatusArea()}
         </div>
       </ScrollArea>
     );
@@ -273,10 +269,10 @@ const LocalOperator = () => {
       <NavHeader
         title={state.operator}
         onBack={handleBack}
-        docUrl="https://github.com/bytedance/UI-TARS-desktop/"
       ></NavHeader>
       <div className="px-5 pb-5 flex flex-1 gap-5">
-        <Card className="flex-1 basis-2/5 px-0 py-4 gap-4 h-[calc(100vh-76px)]">
+        {/* Single full-width panel — Hi-Bee replaces the old right screenshot viewer */}
+        <Card className="flex-1 px-0 py-4 gap-4 h-[calc(100vh-76px)]">
           <div className="flex items-center justify-between w-full px-4">
             <SidebarTrigger
               variant="secondary"
@@ -294,19 +290,6 @@ const LocalOperator = () => {
             sessionId={state.sessionId}
             checkBeforeRun={checkVLM}
           />
-        </Card>
-        <Card className="flex-1 basis-3/5 p-3 h-[calc(100vh-76px)]">
-          <Tabs defaultValue="screenshot" className="flex-1">
-            <TabsList>
-              <TabsTrigger value="screenshot">ScreenShot</TabsTrigger>
-            </TabsList>
-            <TabsContent value="screenshot">
-              <ImageGallery
-                messages={chatMessages}
-                selectImgIndex={selectImg}
-              />
-            </TabsContent>
-          </Tabs>
         </Card>
       </div>
       <NavDialog

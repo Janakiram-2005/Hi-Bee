@@ -1,13 +1,10 @@
-/**
- * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
- * SPDX-License-Identifier: Apache-2.0
- */
 import { electronApp, optimizer } from '@electron-toolkit/utils';
 import {
   app,
   BrowserView,
   BrowserWindow,
   desktopCapturer,
+  globalShortcut,
   ipcMain,
   session,
   WebContentsView,
@@ -18,7 +15,20 @@ import ElectronStore from 'electron-store';
 
 import * as env from '@main/env';
 import { logger } from '@main/logger';
-import { createMainWindow } from '@main/window/index';
+import { createMainWindow, showMainWindow, hideMainWindow } from '@main/window/index';
+import {
+  createVoiceWindow,
+  closeVoiceWindow,
+  getVoiceWindow,
+  moveVoiceWindow,
+  setVoiceWindowIgnoreMouseEvents,
+} from '@main/window/voiceWindow';
+import {
+  createHiBeeAgentWindow,
+  toggleHiBeeAgentWindow,
+  closeHiBeeAgentWindow,
+  getHiBeeAgentWindow,
+} from '@main/window/hibeeAgentWindow';
 import { registerIpcMain } from '@ui-tars/electron-ipc/main';
 import { ipcRoutes } from './ipcRoutes';
 
@@ -30,11 +40,28 @@ import { registerSettingsHandlers } from './services/settings';
 import { sanitizeState } from './utils/sanitizeState';
 import { windowManager } from './services/windowManager';
 import { checkBrowserAvailability } from './services/browserCheck';
+import { mongoService } from './services/mongoService';
 
 const { isProd } = env;
 
-// 在应用初始化之前启用辅助功能支持
+// ── Accessibility ─────────────────────────────────────────────────────────
 app.commandLine.appendSwitch('force-renderer-accessibility');
+
+// ── Override Chromium's speech / media blocking ────────────────────────────
+// Prevents "service-not-allowed" from SpeechRecognition in transparent windows.
+// `use-fake-ui-for-media-stream` makes Chromium auto-grant all media requests
+// at the browser engine level — no permission dialog, no service check.
+app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+// Enable Web Speech API explicitly (some Electron builds disable it).
+app.commandLine.appendSwitch('enable-features', 'WebSpeechAPI,SpeechSynthesis,AudioCaptureAllowed');
+// Remove the requirement for a user gesture to start audio playback / capture.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+// Disable WebRTC mDNS that can interfere with audio capture routing.
+app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
+// Allow microphone capture without HTTPS — needed for file:// and localhost origins.
+app.commandLine.appendSwitch('allow-insecure-localhost');
+app.commandLine.appendSwitch('ignore-certificate-errors');
+
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (squirrelStartup) {
@@ -57,9 +84,19 @@ const loadDevDebugTools = async () => {
   });
 
   import('electron-devtools-installer')
-    .then(({ default: installExtensionDefault, REACT_DEVELOPER_TOOLS }) => {
+    .then((module) => {
+      const installExtensionDefault = module.default;
+      const REACT_DEVELOPER_TOOLS = module.REACT_DEVELOPER_TOOLS;
       // @ts-ignore
-      const installExtension = installExtensionDefault?.default;
+      const installExtension = typeof installExtensionDefault === 'function'
+        ? installExtensionDefault
+        : (installExtensionDefault as any)?.default;
+      
+      if (typeof installExtension !== 'function') {
+        logger.warn('[main] DevTools installExtension is not a function, skipping.');
+        return;
+      }
+      
       const extensions = [installExtension(REACT_DEVELOPER_TOOLS)];
 
       return Promise.all(extensions)
@@ -79,7 +116,12 @@ const initializeApp = async () => {
     const { ensurePermissions } = await import('@main/utils/systemPermissions');
 
     const ensureScreenCapturePermission = ensurePermissions();
+    store.setState({ ensurePermissions: ensureScreenCapturePermission });
     logger.info('ensureScreenCapturePermission', ensureScreenCapturePermission);
+  } else {
+    store.setState({
+      ensurePermissions: { screenCapture: true, accessibility: true },
+    });
   }
 
   await checkBrowserAvailability();
@@ -92,11 +134,86 @@ const initializeApp = async () => {
   // Tray
   await createTray();
 
+  // Connect MongoDB (non-blocking — app works even if this fails)
+  mongoService.connect().catch((err) => logger.warn('[main] MongoDB connect failed:', err));
+
+  // Register voice hotkeys (Ctrl+Shift+V, Ctrl+Alt+V, Ctrl+Shift+Space) — can also be toggled via settings
+  const VOICE_SHORTCUTS = [
+    'CommandOrControl+Shift+V',
+    'CommandOrControl+Alt+V',
+    'CommandOrControl+Shift+Space',
+  ];
+  VOICE_SHORTCUTS.forEach((shortcut) => {
+    try {
+      const success = globalShortcut.register(shortcut, () => {
+        logger.info(`[main] Hotkey ${shortcut} fired!`);
+        
+        const currentSettings = SettingStore.getStore();
+        if (currentSettings.googleApiSource === 'agent_builder') {
+          toggleHiBeeAgentWindow();
+        } else {
+          if (!currentSettings.voiceEnabled) {
+            SettingStore.set('voiceEnabled', true);
+          }
+          
+          let win = getVoiceWindow();
+          if (!win || win.isDestroyed()) {
+            win = createVoiceWindow();
+          }
+          
+          if (win && !win.isDestroyed()) {
+            win.showInactive();
+          }
+          
+          windowManager.broadcast('voice:toggle-listen', null);
+        }
+      });
+      if (success) {
+        logger.info(`[main] Registered global shortcut: ${shortcut}`);
+      } else {
+        logger.warn(`[main] Failed to register global shortcut: ${shortcut}`);
+      }
+    } catch (err) {
+      logger.warn(`[main] Could not register voice shortcut ${shortcut}:`, err);
+    }
+  });
+
+  // ── Global shortcut: Ctrl+Shift+H = toggle Hi-Bee Agent chat window ────────
+  try {
+    const success = globalShortcut.register('CommandOrControl+Shift+H', () => {
+      logger.info('[main] Ctrl+Shift+H: toggling Hi-Bee Agent window');
+      toggleHiBeeAgentWindow();
+    });
+    if (success) logger.info('[main] Registered Hi-Bee Agent shortcut: Ctrl+Shift+H');
+    else logger.warn('[main] Failed to register Ctrl+Shift+H');
+  } catch (err) {
+    logger.warn('[main] Could not register Ctrl+Shift+H:', err);
+  }
+
   // Send app launched event
   await UTIOService.getInstance().appLaunched();
 
+  // Force/sync startup settings to ensure voice agent always activates on project run
+  SettingStore.set('voiceEnabled', true);
+
+  const { ensureVlmDefaults } = await import('@main/utils/vlmProvider');
+  const syncedSettings = ensureVlmDefaults(SettingStore.getStore());
+  if (syncedSettings.vlmProvider !== SettingStore.get('vlmProvider')) {
+    SettingStore.set('vlmProvider', syncedSettings.vlmProvider);
+  }
+  if (
+    syncedSettings.vertexProjectId &&
+    syncedSettings.vertexProjectId !== SettingStore.get('vertexProjectId')
+  ) {
+    SettingStore.set('vertexProjectId', syncedSettings.vertexProjectId);
+  }
+
+  const settings = SettingStore.getStore();
+
   logger.info('createMainWindow');
-  let mainWindow = createMainWindow();
+  let mainWindow = createMainWindow({
+    showInBackground: settings.voiceEnabled,
+  });
 
   session.defaultSession.setDisplayMediaRequestHandler(
     (_request, callback) => {
@@ -112,6 +229,41 @@ const initializeApp = async () => {
     { useSystemPicker: false },
   );
 
+  const grantedMediaPermissions = new Set<string>();
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const mediaPerms = ['media', 'audio', 'microphone', 'audioCapture', 'mediaKeySystem'];
+    if (mediaPerms.includes(permission as string)) {
+      if (!grantedMediaPermissions.has(permission)) {
+        grantedMediaPermissions.add(permission);
+        logger.info(`[main] Permission granted: ${permission}`);
+      }
+      callback(true);
+    } else {
+      // Grant most other permissions (notifications, geolocation etc) too
+      logger.info(`[main] Permission auto-granted: ${permission}`);
+      callback(true);
+    }
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, _permission) => {
+    // Always return true — the voice window needs unconditional media access
+    return true;
+  });
+
+  // Electron 20+: auto-grant device access for microphone/camera so getUserMedia
+  // never throws NotAllowedError from a transparent/background window.
+  if (typeof session.defaultSession.setDevicePermissionHandler === 'function') {
+    session.defaultSession.setDevicePermissionHandler((details) => {
+      logger.info(`[main] Device permission requested: ${details.deviceType}`);
+      // Grant audio (microphone) always; grant video only if explicitly needed
+      if (details.deviceType === ('media' as any)) {
+        return true;
+      }
+      return true;
+    });
+  }
+
   logger.info('mainZustandBridge');
 
   const { unsubscribe } = registerIPCHandlers([mainWindow]);
@@ -125,6 +277,8 @@ const initializeApp = async () => {
 
   app.on('before-quit', () => {
     logger.info('before-quit');
+    globalShortcut.unregisterAll();
+    mongoService.disconnect().catch(() => {});
     const windows = BrowserWindow.getAllWindows();
     windows.forEach((window) => window.destroy());
   });
@@ -137,7 +291,10 @@ const initializeApp = async () => {
   app.on('activate', () => {
     logger.info('app activate');
     if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = createMainWindow();
+      const settings = SettingStore.getStore();
+      mainWindow = createMainWindow({
+        showInBackground: settings.voiceEnabled,
+      });
     } else {
       if (!mainWindow.isVisible()) {
         mainWindow.show();
@@ -149,7 +306,6 @@ const initializeApp = async () => {
   logger.info('initializeApp end');
 
   // Check and update remote presets
-  const settings = SettingStore.getStore();
   if (
     settings.presetSource?.type === 'remote' &&
     settings.presetSource.autoUpdate
@@ -160,6 +316,37 @@ const initializeApp = async () => {
       logger.error('Failed to update preset:', error);
     }
   }
+
+  // Create voice window on startup if enabled
+  if (settings.voiceEnabled) {
+    if (settings.googleApiSource === 'agent_builder') {
+      createHiBeeAgentWindow();
+    } else {
+      createVoiceWindow();
+    }
+  }
+
+  // Listen for settings change to dynamically show/hide the voice window
+  SettingStore.getInstance().onDidAnyChange((newVal) => {
+    if (newVal?.voiceEnabled) {
+      if (newVal.googleApiSource === 'agent_builder') {
+        closeVoiceWindow();
+        const win = getHiBeeAgentWindow();
+        if (!win || win.isDestroyed()) {
+          createHiBeeAgentWindow();
+        }
+      } else {
+        closeHiBeeAgentWindow();
+        const win = getVoiceWindow();
+        if (!win || win.isDestroyed()) {
+          createVoiceWindow();
+        }
+      }
+    } else {
+      closeVoiceWindow();
+      closeHiBeeAgentWindow();
+    }
+  });
 };
 
 /**
@@ -195,6 +382,49 @@ const registerIPCHandlers = (
     await UTIOService.getInstance().shareReport(params);
   });
 
+  ipcMain.handle('voice-window:move', (_, { dx, dy }) => {
+    moveVoiceWindow(dx, dy);
+  });
+
+  ipcMain.handle('voice-window:set-ignore-mouse-events', (_, ignore) => {
+    setVoiceWindowIgnoreMouseEvents(ignore);
+  });
+
+  // ── Hi-Bee Agent window IPC ─────────────────────────────────────────────────
+  ipcMain.handle('hibee-agent:open', () => {
+    createHiBeeAgentWindow();
+  });
+
+  ipcMain.handle('hibee-agent:close', () => {
+    closeHiBeeAgentWindow();
+  });
+
+  ipcMain.handle('hibee-agent:toggle', () => {
+    toggleHiBeeAgentWindow();
+  });
+
+  ipcMain.handle('voice:open-settings', () => {
+    showMainWindow();
+    windowManager.broadcast('voice:open-settings-ui', null);
+  });
+
+  ipcMain.handle('voice:show-main-window', () => {
+    logger.info('[main] Showing main window for microphone permission request');
+    showMainWindow();
+  });
+
+  ipcMain.handle('voice:hide-main-window-if-background', () => {
+    logger.info('[main] Hiding main window after microphone permission request');
+    const settings = SettingStore.getStore();
+    if (settings.voiceEnabled) {
+      hideMainWindow();
+    }
+  });
+
+  ipcMain.handle('voice:speak', (_event, text) => {
+    windowManager.broadcast('voice:speak-text', text);
+  });
+
   registerSettingsHandlers();
   // register ipc services routes
   registerIpcMain(ipcRoutes);
@@ -205,14 +435,6 @@ const registerIPCHandlers = (
 /**
  * Add event listeners...
  */
-
-app.on('window-all-closed', () => {
-  // Respect the OSX convention of having the application in memory even
-  // after all windows have been closed
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
 
 app
   .whenReady()

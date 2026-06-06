@@ -141,6 +141,7 @@ const Widget = () => {
   const handleStop = useCallback(async () => {
     await api.stopRun();
     await api.clearHistory();
+    window.close();
   }, []);
 
   return (

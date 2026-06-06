@@ -16,10 +16,17 @@ import {
 } from './types';
 import { validatePreset } from './validate';
 import { BrowserWindow } from 'electron';
+import { getVertexProjectId } from '@main/utils/vlmProvider';
+
+const defaultVertexProjectId = getVertexProjectId({
+  vertexProjectId: '',
+} as LocalStore);
 
 export const DEFAULT_SETTING: LocalStore = {
   language: 'en',
-  vlmProvider: (env.vlmProvider as VLMProviderV2) || '',
+  vlmProvider:
+    (env.vlmProvider as VLMProviderV2) ||
+    (defaultVertexProjectId ? VLMProviderV2.gemini_vertex : ('' as VLMProviderV2)),
   vlmBaseUrl: env.vlmBaseUrl || '',
   vlmApiKey: env.vlmApiKey || '',
   vlmModelName: env.vlmModelName || '',
@@ -30,6 +37,26 @@ export const DEFAULT_SETTING: LocalStore = {
   operator: Operator.LocalComputer,
   reportStorageBaseUrl: '',
   utioBaseUrl: '',
+  // ── Google Vertex AI Gemini defaults ──────────────────────────────────────
+  vertexProjectId: env.vertexVlmProjectId || env.vertexProjectId || '',
+  vertexLocation: env.vertexVlmLocation || env.vertexLocation || 'us-central1',
+  vertexModelName: env.vertexVlmModelName || 'gemini-2.5-flash',
+  vertexChatModelName: 'gemini-2.5-flash',
+  vertexServiceAccountPath: '',
+  enableStreamingResponse: true,
+  googleApiSource: 'direct',
+  // ── Voice Agent defaults ───────────────────────────────────────────────────
+  voiceEnabled: true,
+  voiceAutoStart: true,
+  voiceLanguage: 'en-US',
+  voiceAccent: '',
+  voiceAccentUri: '',
+  voiceSilenceMs: 1000,
+  voiceHotkey: 'Ctrl+Shift+V',
+  micPermissionGranted: false,
+  voiceWakeupMode: 'hotkey',
+  voiceWakePhrase: 'hey hibee',
+  voiceTtsBackend: 'gcp',
 };
 
 export class SettingStore {
@@ -41,6 +68,39 @@ export class SettingStore {
         name: 'ui_tars.setting',
         defaults: DEFAULT_SETTING,
       });
+
+      // Sanitization: override deprecated/non-existent model names persisted on disk
+      try {
+        const store = SettingStore.instance.store;
+        if (
+          store.vertexModelName === 'gemini-2.5-flash-preview-05-20' ||
+          store.vertexModelName === 'gemini-1.5-flash'
+        ) {
+          logger.info(`[SettingStore] Migrated vertexModelName: ${store.vertexModelName} -> gemini-2.5-flash`);
+          SettingStore.instance.set('vertexModelName', 'gemini-2.5-flash');
+        } else if (store.vertexModelName === 'gemini-1.5-pro') {
+          logger.info(`[SettingStore] Migrated vertexModelName: gemini-1.5-pro -> gemini-2.5-pro`);
+          SettingStore.instance.set('vertexModelName', 'gemini-2.5-pro');
+        }
+
+        if (
+          store.vertexChatModelName === 'gemini-2.5-flash-preview-05-20' ||
+          store.vertexChatModelName === 'gemini-1.5-flash'
+        ) {
+          logger.info(`[SettingStore] Migrated vertexChatModelName: ${store.vertexChatModelName} -> gemini-2.5-flash`);
+          SettingStore.instance.set('vertexChatModelName', 'gemini-2.5-flash');
+        } else if (store.vertexChatModelName === 'gemini-1.5-pro') {
+          logger.info(`[SettingStore] Migrated vertexChatModelName: gemini-1.5-pro -> gemini-2.5-pro`);
+          SettingStore.instance.set('vertexChatModelName', 'gemini-2.5-pro');
+        }
+        // Migrate TTS backend: 'browser' → 'gcp' so Indian language voices work
+        if (store.voiceTtsBackend === 'browser' || !store.voiceTtsBackend) {
+          logger.info('[SettingStore] Migrating voiceTtsBackend: browser -> gcp for Indian language support');
+          SettingStore.instance.set('voiceTtsBackend', 'gcp');
+        }
+      } catch (err) {
+        logger.error('[SettingStore] Failed to sanitize settings model names:', err);
+      }
 
       SettingStore.instance.onDidAnyChange((newValue, oldValue) => {
         logger.log(
