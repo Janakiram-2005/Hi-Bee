@@ -230,8 +230,8 @@ class ScreenMarker {
           ...(overlay.xPos &&
             overlay.yPos && {
               // logical pixels
-              x: (overlay.xPos + overlay.offsetX) * scaleFactor,
-              y: (overlay.yPos + overlay.offsetY) * scaleFactor,
+              x: Math.round(overlay.xPos / scaleFactor + overlay.offsetX),
+              y: Math.round(overlay.yPos / scaleFactor + overlay.offsetY),
             }),
         });
 
@@ -271,13 +271,22 @@ class ScreenMarker {
 
           // auto-close: 3 s for click actions, 5 s for others
           const isClickAction = predictions.some((p) =>
-            ['click', 'left_click', 'left_single', 'left_double', 'double_click', 'right_click', 'right_single'].includes(
-              (p as any).action_type ?? (p as any).type ?? '',
-            ),
+            [
+              'click',
+              'left_click',
+              'left_single',
+              'left_double',
+              'double_click',
+              'right_click',
+              'right_single',
+            ].includes((p as any).action_type ?? (p as any).type ?? ''),
           );
-          setTimeout(() => {
-            this.closeOverlay();
-          }, isClickAction ? 3000 : 5000);
+          setTimeout(
+            () => {
+              this.closeOverlay();
+            },
+            isClickAction ? 3000 : 5000,
+          );
         }
       } catch (error) {
         logger.error('[showPredictionMarker] 显示预测标记失败:', error);
@@ -371,10 +380,16 @@ class ScreenMarker {
 
       // Auto-close after lifetime
       setTimeout(() => {
-        try { ringWin.close(); } catch (_) { /* already closed */ }
+        try {
+          ringWin.close();
+        } catch (_) {
+          /* already closed */
+        }
       }, lifetimeMs + 50);
 
-      logger.info(`[ScreenMarker] showClickRing at (${x}, ${y}) for ${lifetimeMs}ms`);
+      logger.info(
+        `[ScreenMarker] showClickRing at (${x}, ${y}) for ${lifetimeMs}ms`,
+      );
     } catch (err) {
       logger.warn('[ScreenMarker] showClickRing failed:', err);
     }

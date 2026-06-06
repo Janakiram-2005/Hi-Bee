@@ -105,7 +105,9 @@ export class NutJSElectronOperator extends NutJSOperator {
     let result = await capture();
     const newHash = this._hashB64(result.base64);
     if (newHash === this._lastScreenshotHash) {
-      logger.warn('[screenshot] Stale frame detected — waiting 300 ms and retaking');
+      logger.warn(
+        '[screenshot] Stale frame detected — waiting 300 ms and retaking',
+      );
       await sleep(300);
       result = await capture();
     }
@@ -147,7 +149,7 @@ export class NutJSElectronOperator extends NutJSOperator {
   }
 
   async execute(params: ExecuteParams): Promise<ExecuteOutput> {
-    const scaleFactor = params.scaleFactor || 1;
+    const scaleFactor = env.isMacOS ? params.scaleFactor || 1 : 1;
     const adjustedParams = {
       ...params,
       screenWidth: params.screenWidth / scaleFactor,
@@ -160,9 +162,13 @@ export class NutJSElectronOperator extends NutJSOperator {
     // For visual actions, show an animated ring at the target coordinate
     // BEFORE the actual click so the user can see where the VLM is clicking.
     const isClickLike = [
-      'click', 'left_click', 'left_single',
-      'left_double', 'double_click',
-      'right_click', 'right_single',
+      'click',
+      'left_click',
+      'left_single',
+      'left_double',
+      'double_click',
+      'right_click',
+      'right_single',
     ].includes(action_type);
 
     if (isClickLike && action_inputs?.start_box) {
