@@ -54,6 +54,8 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     pendingConfirmText,
     setTextInput,
     voiceWakeupMode,
+    clearHistory,
+    setCurrentTask,
   } = useVoiceStore();
 
   // ── Global VLM automation store state ────────────────────────────────────
@@ -350,6 +352,26 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     }
   }, [isListening, startListening, stopListening, stopTTS, agentStatus, setExpanded]);
 
+  const handleReset = useCallback(async () => {
+    await api.stopRun().catch(() => {});
+    await api.clearHistory().catch(() => {});
+    stopTTS();
+    clearHistory();
+    setCurrentTask(null);
+    setTextInput('');
+    setAvatarState('idle');
+
+    const lang = selectedLanguage;
+    let msg = "Memory cleared. Starting fresh!";
+    if (lang.startsWith('te-')) msg = "టాస్క్ మెమరీ క్లియర్ చేయబడింది. కొత్తగా ప్రారంభిస్తున్నాను!";
+    else if (lang.startsWith('hi-')) msg = "कार्य स्मृति साफ़ कर दी गई है। नए सिरे से शुरुआत कर रहे हैं!";
+    else if (lang.startsWith('ta-')) msg = "பணி நினைவகம் அழிக்கப்பட்டது. புதியதாக தொடங்குகிறது!";
+    else if (lang.startsWith('kn-')) msg = "ಕೆಲಸದ ಮೆಮೊರಿ ತೆರವುಗೊಳಿಸಲಾಗಿದೆ. ಹೊಸದಾಗಿ ಪ್ರಾರಂಭಿಸಲಾಗುತ್ತಿದೆ!";
+    else if (lang.startsWith('ml-')) msg = "ടാസ്ക് മെമ്മറി മായ്‌ച്ചു. പുതിയതായി ആരംഭിക്കുന്നു!";
+    else if (lang.startsWith('bn-')) msg = "টাস্ক মেমরি মুছে ফেলা হয়েছে। নতুন করে শুরু করছি!";
+    speak(msg);
+  }, [speak, stopTTS, clearHistory, setCurrentTask, setTextInput, setAvatarState, selectedLanguage]);
+
   // ─── Hotkey listener from main process ───────────────────────────────────
   useEffect(() => {
     const handler = () => toggleListening();
@@ -503,6 +525,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
             onToggleMic={toggleListening}
             isListening={isListening ? isListening() : false}
             onSendText={handleCommit}
+            onReset={handleReset}
           />
         )}
 

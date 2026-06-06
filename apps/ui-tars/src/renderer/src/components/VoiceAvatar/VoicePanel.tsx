@@ -6,7 +6,7 @@
  * live transcript, language/voice selector, and Task KB viewer.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause } from 'lucide-react';
+import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause, RotateCcw } from 'lucide-react';
 import { useVoiceStore } from '@renderer/store/voiceStore';
 import { RobotAvatar } from './RobotAvatar';
 import { api } from '@renderer/api';
@@ -55,6 +55,7 @@ interface VoicePanelProps {
   onToggleMic: () => void;
   isListening: boolean;
   onSendText?: (text: string) => void;
+  onReset: () => void;
 }
 
 export function VoicePanel({
@@ -66,6 +67,7 @@ export function VoicePanel({
   onToggleMic,
   isListening,
   onSendText,
+  onReset,
 }: VoicePanelProps) {
   const { settings, updateSetting } = useSetting();
   const { status: agentStatus } = useStore();
@@ -226,7 +228,7 @@ export function VoicePanel({
       )}
 
       {/* Unified Text & Mic Input Container */}
-      <form onSubmit={handleTextSubmit} className="voice-text-form-container" style={{ margin: '8px 12px', display: 'flex', gap: '8px', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <form onSubmit={handleTextSubmit} className="voice-text-form-container" style={{ margin: '8px 12px', display: 'flex', gap: '8px', background: 'rgba(15, 23, 42, 0.04)', padding: '6px', borderRadius: '8px', border: '1px solid rgba(15, 23, 42, 0.08)' }}>
         <input
           type="text"
           className="voice-text-input-field"
@@ -234,7 +236,7 @@ export function VoicePanel({
           onChange={(e) => setTextInput(e.target.value)}
           placeholder={isListening ? "🎙️ Recording... Speak now..." : "Type or speak to Hi-Bee..."}
           disabled={avatarState === 'thinking'}
-          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#fff', fontSize: '13px', padding: '0 8px' }}
+          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#0f172a', fontSize: '13px', padding: '0 8px' }}
         />
         
         {/* Traditional Mic Button */}
@@ -379,6 +381,17 @@ export function VoicePanel({
             title={isMuted ? 'Unmute Voice output' : 'Mute Voice output'}
           >
             {isMuted ? <VolumeX size={16} strokeWidth={1.5} /> : <Volume2 size={16} strokeWidth={1.5} />}
+          </button>
+
+          {/* Reset Memory / Clear Memory Button */}
+          <button
+            type="button"
+            className="voice-ctrl-btn"
+            style={{ color: '#d97706', borderColor: '#fde047' }}
+            onClick={onReset}
+            title="Reset/Clear memory and start fresh"
+          >
+            <RotateCcw size={16} strokeWidth={1.5} />
           </button>
 
           {/* TTS Play/Pause controls */}

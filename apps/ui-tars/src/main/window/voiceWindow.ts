@@ -53,6 +53,8 @@ export function createVoiceWindow() {
     },
   });
 
+  voiceWindow.setAlwaysOnTop(true, 'screen-saver');
+
   const routerPath = '#/voice-avatar';
   if (!app.isPackaged && env.rendererUrl) {
     voiceWindow.loadURL(env.rendererUrl + routerPath);
