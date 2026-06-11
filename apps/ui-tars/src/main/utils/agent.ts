@@ -14,7 +14,6 @@ import {
   closeScreenMarker,
   hideScreenWaterFlow,
   hideWidgetWindow,
-  showWidgetWindow,
 } from '../window/ScreenMarker';
 import { hideMainWindow /*, showMainWindow */ } from '../window';
 import { getVoiceWindow } from '../window/voiceWindow';
@@ -99,13 +98,13 @@ export const beforeAgentRun = async (
     case Operator.RemoteBrowser:
       break;
     case Operator.LocalComputer:
-      showWidgetWindow();
+      // showWidgetWindow();
       // showScreenWaterFlow();
       hideMainWindow();
       break;
     case Operator.LocalBrowser:
       hideMainWindow();
-      showWidgetWindow();
+      // showWidgetWindow();
       break;
     default:
       break;
