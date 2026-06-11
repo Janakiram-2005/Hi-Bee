@@ -166,7 +166,7 @@ class ScreenMarker {
     });
 
     this.widgetWindow.setFocusable(false);
-    this.widgetWindow.setContentProtection(true); // not show for vlm model
+    this.widgetWindow.setContentProtection(false); // allow to show for vlm model
     this.widgetWindow.setPosition(
       Math.floor(screenWidth - 400 - 32),
       Math.floor(screenHeight - 400 - 32 - 64),
@@ -237,7 +237,7 @@ class ScreenMarker {
 
         this.currentOverlay.blur();
         this.currentOverlay.setFocusable(false);
-        this.currentOverlay.setContentProtection(true); // not show for vlm model
+        this.currentOverlay.setContentProtection(false); // allow to show for vlm model
         this.currentOverlay.setIgnoreMouseEvents(true, { forward: true });
 
         if (env.isWindows) {
@@ -347,7 +347,7 @@ class ScreenMarker {
 
       ringWin.blur();
       ringWin.setFocusable(false);
-      ringWin.setContentProtection(true);
+      ringWin.setContentProtection(false); // allow to show for vlm model
       ringWin.setIgnoreMouseEvents(true, { forward: true });
 
       if (env.isWindows) {

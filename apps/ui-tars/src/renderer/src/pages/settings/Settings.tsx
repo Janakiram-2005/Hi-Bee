@@ -511,10 +511,10 @@ export default function Settings() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="gemini-2.5-pro">
-                                  gemini-2.5-pro (Most capable · Recommended)
+                                  gemini-2.5-pro ★ (Most capable · Recommended)
                                 </SelectItem>
                                 <SelectItem value="gemini-2.5-flash">
-                                  gemini-2.5-flash (Fast)
+                                  gemini-2.5-flash (Fast · Recommended)
                                 </SelectItem>
                                 <SelectItem value="gemini-2.5-flash-lite">
                                   gemini-2.5-flash-lite (Fastest)
@@ -546,7 +546,9 @@ export default function Settings() {
                           <FormItem>
                             <FormLabel>
                               Service Account JSON Path{' '}
-                              <span className="text-gray-400 font-normal">(optional)</span>
+                              <span className="text-gray-400 font-normal">
+                                (optional)
+                              </span>
                             </FormLabel>
                             <FormControl>
                               <Input
@@ -557,7 +559,9 @@ export default function Settings() {
                             </FormControl>
                             <p className="text-xs text-gray-500">
                               Leave blank to use{' '}
-                              <code className="bg-gray-100 px-1 rounded">GOOGLE_APPLICATION_CREDENTIALS</code>{' '}
+                              <code className="bg-gray-100 px-1 rounded">
+                                GOOGLE_APPLICATION_CREDENTIALS
+                              </code>{' '}
                               env var or Application Default Credentials.
                             </p>
                             <FormMessage />

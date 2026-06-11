@@ -19,10 +19,7 @@ import {
 
 import { actionParser } from '@ui-tars/action-parser';
 import { IMAGE_PLACEHOLDER } from '@ui-tars/shared/constants';
-import {
-  UITarsModelVersion,
-  MAX_PIXELS_V1_5,
-} from '@ui-tars/shared/types';
+import { UITarsModelVersion, MAX_PIXELS_V1_5 } from '@ui-tars/shared/types';
 
 import { logger } from '@main/logger';
 
@@ -79,7 +76,7 @@ export interface VertexAIConfig {
   location: string;
   /**
    * Gemini model name.
-   * Supported: "gemini-2.5-flash" | "gemini-2.5-pro" | "gemini-1.5-flash"
+   * Supported: "gemini-2.5-flash" | "gemini-2.5-pro" | "gemini-2.0-flash" | "gemini-1.5-flash"
    */
   modelName: string;
   /**
@@ -112,7 +109,10 @@ export interface GeminiResponseAdapter {
 
 const resizedImageCache = new Map<string, string>();
 
-async function resizeImageForGemini(base64: string, maxPixels: number): Promise<string> {
+async function resizeImageForGemini(
+  base64: string,
+  maxPixels: number,
+): Promise<string> {
   const cached = resizedImageCache.get(base64);
   if (cached) return cached;
 
@@ -188,7 +188,11 @@ export function convertMessagesToGemini(
     } else {
       // Merge consecutive same-role text parts to minimise round-trips
       const last = contents[contents.length - 1];
-      if (last && last.role === role && !last.parts.some((p) => 'inlineData' in p)) {
+      if (
+        last &&
+        last.role === role &&
+        !last.parts.some((p) => 'inlineData' in p)
+      ) {
         (last.parts as Part[]).push({ text: conv.value });
       } else {
         contents.push({ role, parts: [{ text: conv.value }] });
@@ -218,10 +222,15 @@ class DefaultGeminiResponseAdapter implements GeminiResponseAdapter {
 
     let cleanedText = rawText.trim();
     if (!/Action[:：]/.test(cleanedText)) {
-      const actionMatch = cleanedText.match(/\b(click|drag|type|wait|finished|call_user|scroll|left_double|right_single|hotkey)\b/);
+      const actionMatch = cleanedText.match(
+        /\b(click|drag|type|wait|finished|call_user|scroll|left_double|right_single|hotkey)\b/,
+      );
       if (actionMatch && actionMatch.index !== undefined) {
         const index = actionMatch.index;
-        cleanedText = cleanedText.substring(0, index) + '\nAction: ' + cleanedText.substring(index);
+        cleanedText =
+          cleanedText.substring(0, index) +
+          '\nAction: ' +
+          cleanedText.substring(index);
       }
     }
 
@@ -260,9 +269,9 @@ class DefaultGeminiResponseAdapter implements GeminiResponseAdapter {
  * ```
  */
 export class GeminiVertexModel {
-  private readonly cfg: Required<
-    Omit<VertexAIConfig, 'serviceAccountPath'>
-  > & { serviceAccountPath?: string };
+  private readonly cfg: Required<Omit<VertexAIConfig, 'serviceAccountPath'>> & {
+    serviceAccountPath?: string;
+  };
 
   private vertexClient: VertexAI | null = null;
   private readonly adapter: GeminiResponseAdapter;
@@ -297,7 +306,10 @@ export class GeminiVertexModel {
   // ── Private helpers ──────────────────────────────────────────────────────
 
   private getClient(): VertexAI {
-    if (this.cfg.serviceAccountPath && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    if (
+      this.cfg.serviceAccountPath &&
+      !process.env.GOOGLE_APPLICATION_CREDENTIALS
+    ) {
       process.env.GOOGLE_APPLICATION_CREDENTIALS = this.cfg.serviceAccountPath;
     }
     if (!this.vertexClient) {
@@ -318,10 +330,22 @@ export class GeminiVertexModel {
         topP: 0.95,
       },
       safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,  threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,  threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+        {
+          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        },
       ],
     });
   }
@@ -354,7 +378,9 @@ export class GeminiVertexModel {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt < maxRetries) {
           const backoff = Math.min(500 * 2 ** attempt, 4000);
-          logger.warn(`[GeminiVertexModel] attempt ${attempt + 1} failed: ${lastError.message}. Retry in ${backoff}ms`);
+          logger.warn(
+            `[GeminiVertexModel] attempt ${attempt + 1} failed: ${lastError.message}. Retry in ${backoff}ms`,
+          );
           await sleep(backoff);
         }
       }
@@ -372,7 +398,10 @@ export class GeminiVertexModel {
       if (config.serviceAccountPath) {
         process.env.GOOGLE_APPLICATION_CREDENTIALS = config.serviceAccountPath;
       }
-      const vertex = new VertexAI({ project: config.projectId, location: config.location });
+      const vertex = new VertexAI({
+        project: config.projectId,
+        location: config.location,
+      });
       const model = vertex.getGenerativeModel({ model: config.modelName });
       const result = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
@@ -388,7 +417,8 @@ export class GeminiVertexModel {
    * Mirrors UITarsModel.invoke() in signature.
    */
   async invoke(params: InvokeParams): Promise<InvokeOutput> {
-    const { conversations, images, screenContext, scaleFactor, uiTarsVersion } = params;
+    const { conversations, images, screenContext, scaleFactor, uiTarsVersion } =
+      params;
 
     logger.info(
       `[GeminiVertexModel] invoke model=${this.cfg.modelName} ` +
@@ -403,7 +433,9 @@ export class GeminiVertexModel {
     const contents = convertMessagesToGemini(conversations, compressed);
 
     if (contents.length === 0) {
-      throw new Error('[GeminiVertexModel] No content — conversations array is empty');
+      throw new Error(
+        '[GeminiVertexModel] No content — conversations array is empty',
+      );
     }
 
     const { text, costTime, costTokens } = await this.callWithRetry(contents);
@@ -412,7 +444,11 @@ export class GeminiVertexModel {
       `[GeminiVertexModel] response costTime=${costTime}ms tokens=${costTokens} len=${text.length}`,
     );
 
-    const output = this.adapter.adapt(text, { screenContext, scaleFactor, uiTarsVersion });
+    const output = this.adapter.adapt(text, {
+      screenContext,
+      scaleFactor,
+      uiTarsVersion,
+    });
     return { ...output, costTime, costTokens };
   }
 }

@@ -37,9 +37,12 @@ import { api } from '@/renderer/src/api';
 
 const formSchema = z
   .object({
-    vlmProvider: z.nativeEnum(VLMProviderV2, {
-      message: 'Please select a VLM Provider to enhance resolution',
-    }).optional().or(z.literal('')),
+    vlmProvider: z
+      .nativeEnum(VLMProviderV2, {
+        message: 'Please select a VLM Provider to enhance resolution',
+      })
+      .optional()
+      .or(z.literal('')),
     vlmBaseUrl: z.string().optional(),
     vlmApiKey: z.string().optional(),
     vlmModelName: z.string().optional(),
@@ -174,7 +177,8 @@ export function VLMSettings({
           vertexProjectId: settings.vertexProjectId || '',
           vertexLocation: settings.vertexLocation || 'us-central1',
           vertexModelName: settings.vertexModelName || 'gemini-2.5-flash',
-          vertexChatModelName: settings.vertexChatModelName || 'gemini-2.5-flash',
+          vertexChatModelName:
+            settings.vertexChatModelName || 'gemini-2.5-flash',
           googleApiSource: settings.googleApiSource || 'direct',
           vertexServiceAccountPath: settings.vertexServiceAccountPath || '',
         });
@@ -401,6 +405,7 @@ export function VLMSettings({
         setIsCheckingResponseApi(true);
         const modelConfig = {
           baseUrl: newBaseUrl || '',
+          // secretlint-disable-next-line
           apiKey: newApiKey || '',
           modelName: newModelName || '',
         };
@@ -575,13 +580,27 @@ export function VLMSettings({
                         <SelectValue placeholder="Select Gemini model name" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="gemini-2.5-pro">gemini-2.5-pro ★ (Recommended)</SelectItem>
-                        <SelectItem value="gemini-2.5-flash">gemini-2.5-flash (Fast)</SelectItem>
-                        <SelectItem value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Fastest)</SelectItem>
-                        <SelectItem value="gemini-2.0-pro">gemini-2.0-pro</SelectItem>
-                        <SelectItem value="gemini-2.0-flash">gemini-2.0-flash</SelectItem>
-                        <SelectItem value="gemini-1.5-pro">gemini-1.5-pro</SelectItem>
-                        <SelectItem value="gemini-1.5-flash">gemini-1.5-flash (Stable)</SelectItem>
+                        <SelectItem value="gemini-2.5-pro">
+                          gemini-2.5-pro ★ (Most Capable · Recommended)
+                        </SelectItem>
+                        <SelectItem value="gemini-2.5-flash">
+                          gemini-2.5-flash (Fast · Recommended)
+                        </SelectItem>
+                        <SelectItem value="gemini-2.5-flash-lite">
+                          gemini-2.5-flash-lite (Fastest)
+                        </SelectItem>
+                        <SelectItem value="gemini-2.0-pro">
+                          gemini-2.0-pro
+                        </SelectItem>
+                        <SelectItem value="gemini-2.0-flash">
+                          gemini-2.0-flash
+                        </SelectItem>
+                        <SelectItem value="gemini-1.5-pro">
+                          gemini-1.5-pro
+                        </SelectItem>
+                        <SelectItem value="gemini-1.5-flash">
+                          gemini-1.5-flash (Stable)
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -605,8 +624,12 @@ export function VLMSettings({
                         <SelectValue placeholder="Select API Source" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="direct">Google Vertex AI Gemini (Direct API)</SelectItem>
-                        <SelectItem value="agent_builder">Google Conversational AI (Agent Builder Chat)</SelectItem>
+                        <SelectItem value="direct">
+                          Google Vertex AI Gemini (Direct API)
+                        </SelectItem>
+                        <SelectItem value="agent_builder">
+                          Google Conversational AI (Agent Builder Chat)
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -631,8 +654,13 @@ export function VLMSettings({
                           <SelectValue placeholder="Select Gemini voice model" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="gemini-2.5-pro">gemini-2.5-pro (Highly Intelligent)</SelectItem>
-                          <SelectItem value="gemini-2.5-flash">gemini-2.5-flash (Fast & Conversational)</SelectItem>
+                          <SelectItem value="gemini-2.5-pro">
+                            gemini-2.5-pro (Highly Intelligent · Recommended)
+                          </SelectItem>
+                          <SelectItem value="gemini-2.5-flash">
+                            gemini-2.5-flash (Fast & Conversational ·
+                            Recommended)
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -746,6 +774,7 @@ export function VLMSettings({
               newProvider === VLMProviderV2.gemini_vertex
                 ? {
                     baseUrl: '',
+                    // secretlint-disable-next-line
                     apiKey: '',
                     modelName: newVertexModelName || '',
                     provider: newProvider,
@@ -756,6 +785,7 @@ export function VLMSettings({
                   }
                 : {
                     baseUrl: newBaseUrl || '',
+                    // secretlint-disable-next-line
                     apiKey: newApiKey || '',
                     modelName: newModelName || '',
                     provider: newProvider,
@@ -811,6 +841,7 @@ export function VLMSettings({
 interface ModelAvailabilityCheckProps {
   modelConfig: {
     baseUrl: string;
+    // secretlint-disable-next-line
     apiKey: string;
     modelName: string;
     provider?: string;
@@ -840,8 +871,14 @@ export function ModelAvailabilityCheck({
 }: ModelAvailabilityCheckProps) {
   const [checkState, setCheckState] = useState<CheckState>({ status: 'idle' });
 
-  const { baseUrl, apiKey, modelName, provider, vertexProjectId, vertexLocation } =
-    modelConfig;
+  const {
+    baseUrl,
+    apiKey,
+    modelName,
+    provider,
+    vertexProjectId,
+    vertexLocation,
+  } = modelConfig;
   const isConfigValid =
     provider === VLMProviderV2.gemini_vertex
       ? !!(vertexProjectId && vertexLocation && modelName)

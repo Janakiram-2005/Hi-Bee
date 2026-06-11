@@ -11,7 +11,7 @@ vertexProjectId: "convertionalai"
 # The location/region where Vertex AI Gemini is deployed.
 vertexLocation: "us-central1"
 
-# The Gemini model to use. Choices: gemini-2.5-flash, gemini-2.5-pro
+# The Gemini model to use. Choices: gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash
 vertexModelName: "gemini-2.5-flash"
 
 # Path to service account key JSON file.

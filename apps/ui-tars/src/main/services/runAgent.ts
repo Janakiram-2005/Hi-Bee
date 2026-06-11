@@ -5,6 +5,9 @@
 import assert from 'assert';
 import { exec } from 'child_process';
 import { shell } from 'electron';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 import { logger } from '@main/logger';
 import { StatusEnum } from '@ui-tars/shared/types';
@@ -44,65 +47,108 @@ import {
 import { FREE_MODEL_BASE_URL } from '../remote/shared';
 import { getAuthHeader } from '../remote/auth';
 import { ProxyClient } from '../remote/proxyClient';
-import { UITarsModel, type UITarsModelConfig, type InvokeParams } from '@ui-tars/sdk/core';
+import {
+  UITarsModel,
+  type UITarsModelConfig,
+  type InvokeParams,
+} from '@ui-tars/sdk/core';
 import { registerCallUserTimer, cancelCallUserTimer } from './stopAgentRun';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface FastAction {
   type: 'launch' | 'search' | 'url' | 'summarize';
   commandOrUrl: string;
 }
 
-export function getFastActionCommand(instructions: string, isWindows: boolean): FastAction | null {
+export function getFastActionCommand(
+  instructions: string,
+  isWindows: boolean,
+): FastAction | null {
   // Strip trailing punctuation (like periods, question marks, commas, etc.)
-  const query = instructions.trim().replace(/[.,\/#!$%\^\&\*;:{}=\-_`~()?]+$/g, '').trim();
-  
+  const query = instructions
+    .trim()
+    .replace(/[.,\/#!$%\^\&\*;:{}=\-_`~()?]+$/g, '')
+    .trim();
+
   // Redirect Chrome launching to open google.com directly
-  if (/^(?:open|launch|start|run|show|execute)?\s*(google\s+)?chrome$/i.test(query)) {
+  if (
+    /^(?:open|launch|start|run|show|execute)?\s*(google\s+)?chrome$/i.test(
+      query,
+    )
+  ) {
     return {
       type: 'url',
-      commandOrUrl: 'https://google.com'
+      commandOrUrl: 'https://google.com',
     };
   }
 
   // 0. Check for screen summarize / describe requests
-  const summarizeRegex = /^(?:summarize|summarise|describe|tell\s+me\s+about|what['']?s\s+on|what\s+is\s+on|explain|read)\s*(?:the\s+)?(?:screen|this|my\s+screen|what\s+you\s+see|the\s+display|what['']?s\s+happening)?$/i;
+  const summarizeRegex =
+    /^(?:summarize|summarise|describe|tell\s+me\s+about|what['']?s\s+on|what\s+is\s+on|explain|read)\s*(?:the\s+)?(?:screen|this|my\s+screen|what\s+you\s+see|the\s+display|what['']?s\s+happening)?$/i;
   if (summarizeRegex.test(query)) {
     return {
       type: 'summarize',
-      commandOrUrl: query
+      commandOrUrl: query,
     };
   }
 
   // 0b. YouTube search (e.g. "search on youtube believer song", "youtube search for cats")
-  const youtubeSearchRegex = /^(?:search\s+on\s+youtube|youtube\s+search|search\s+(?:in|on|for)\s+youtube|search\s+youtube|play\s+on\s+youtube|find\s+on\s+youtube|youtube)\s+(?:for\s+)?(.+)$/i;
+  const youtubeSearchRegex =
+    /^(?:search\s+on\s+youtube|youtube\s+search|search\s+(?:in|on|for)\s+youtube|search\s+youtube|play\s+on\s+youtube|find\s+on\s+youtube|youtube)\s+(?:for\s+)?(.+)$/i;
   const youtubeSearchMatch = query.match(youtubeSearchRegex);
   if (youtubeSearchMatch) {
     const ytQuery = youtubeSearchMatch[1].trim();
     if (ytQuery) {
       return {
         type: 'url',
-        commandOrUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(ytQuery)}`
+        commandOrUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(ytQuery)}`,
       };
     }
   }
 
   // 1. Check for search queries (Google)
-  const searchForRegex = /^(?:search\s+for|google\s+search\s+for|search\s+on\s+google\s+for|google\s+search|google|search)\s+(.+)$/i;
+  const searchForRegex =
+    /^(?:search\s+for|google\s+search\s+for|search\s+on\s+google\s+for|google\s+search|google|search)\s+(.+)$/i;
   const searchForMatch = query.match(searchForRegex);
   if (searchForMatch) {
     const rawSearchQuery = searchForMatch[1].trim();
     const lowerQuery = rawSearchQuery.toLowerCase();
-    const isApp = ['paint', 'notepad', 'chrome', 'edge', 'firefox', 'calculator', 'calc', 'settings', 'explorer', 'cmd', 'powershell', 'task manager', 'taskmgr', 'camera', 'photos', 'clock', 'store', 'vscode', 'code', 'safari', 'browser', 'terminal'].includes(lowerQuery);
+    const isApp = [
+      'paint',
+      'notepad',
+      'chrome',
+      'edge',
+      'firefox',
+      'calculator',
+      'calc',
+      'settings',
+      'explorer',
+      'cmd',
+      'powershell',
+      'task manager',
+      'taskmgr',
+      'camera',
+      'photos',
+      'clock',
+      'store',
+      'vscode',
+      'code',
+      'safari',
+      'browser',
+      'terminal',
+    ].includes(lowerQuery);
     if (rawSearchQuery && !isApp) {
       return {
         type: 'search',
-        commandOrUrl: `https://www.google.com/search?q=${encodeURIComponent(rawSearchQuery)}`
+        commandOrUrl: `https://www.google.com/search?q=${encodeURIComponent(rawSearchQuery)}`,
       };
     }
   }
 
   // 2. Direct website opens
-  const urlRegex = /^(?:open|go\s+to|visit)\s+(https?:\/\/)?([a-z0-9]+([\-.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?)$/i;
+  const urlRegex =
+    /^(?:open|go\s+to|visit)\s+(https?:\/\/)?([a-z0-9]+([\-.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?)$/i;
   const urlMatch = query.match(urlRegex);
   if (urlMatch) {
     let url = urlMatch[2];
@@ -111,7 +157,7 @@ export function getFastActionCommand(instructions: string, isWindows: boolean): 
     }
     return {
       type: 'url',
-      commandOrUrl: url
+      commandOrUrl: url,
     };
   }
 
@@ -126,93 +172,97 @@ export function getFastActionCommand(instructions: string, isWindows: boolean): 
     wikipedia: 'https://wikipedia.org',
     facebook: 'https://facebook.com',
     twitter: 'https://twitter.com',
-    linkedin: 'https://linkedin.com'
+    linkedin: 'https://linkedin.com',
   };
-  const friendlyWebRegex = /^(?:open|go\s+to|visit)\s+(youtube|github|chatgpt|google|gmail|outlook|wikipedia|facebook|twitter|linkedin)$/i;
+  const friendlyWebRegex =
+    /^(?:open|go\s+to|visit)\s+(youtube|github|chatgpt|google|gmail|outlook|wikipedia|facebook|twitter|linkedin)$/i;
   const friendlyWebMatch = query.match(friendlyWebRegex);
   if (friendlyWebMatch) {
     const name = friendlyWebMatch[1].toLowerCase();
     if (websiteNames[name]) {
       return {
         type: 'url',
-        commandOrUrl: websiteNames[name]
+        commandOrUrl: websiteNames[name],
       };
     }
   }
 
   // 3. Known App Launching
-  const appMapping: Record<string, string> = isWindows ? {
-    paint: 'mspaint.exe',
-    mspaint: 'mspaint.exe',
-    notepad: 'notepad.exe',
-    chrome: 'chrome.exe',
-    google_chrome: 'chrome.exe',
-    edge: 'msedge.exe',
-    msedge: 'msedge.exe',
-    microsoft_edge: 'msedge.exe',
-    firefox: 'firefox.exe',
-    calculator: 'ms-calculator:',
-    calc: 'ms-calculator:',
-    settings: 'ms-settings:',
-    control_panel: 'control.exe',
-    control: 'control.exe',
-    explorer: 'explorer.exe',
-    file_explorer: 'explorer.exe',
-    cmd: 'cmd.exe',
-    command_prompt: 'cmd.exe',
-    powershell: 'powershell.exe',
-    task_manager: 'taskmgr.exe',
-    taskmgr: 'taskmgr.exe',
-    camera: 'microsoft.windows.camera:',
-    photos: 'ms-photos:',
-    clock: 'ms-clock:',
-    store: 'ms-store:',
-    microsoft_store: 'ms-store:',
-    vscode: 'Code.exe',
-    code: 'Code.exe',
-    word: 'winword.exe',
-    msword: 'winword.exe',
-    microsoft_word: 'winword.exe',
-    excel: 'excel.exe',
-    microsoft_excel: 'excel.exe',
-    powerpoint: 'powerpnt.exe',
-    mspowerpoint: 'powerpnt.exe',
-    microsoft_powerpoint: 'powerpnt.exe',
-    outlook: 'outlook.exe',
-    teams: 'teams.exe',
-    weather: 'ms-weather:',
-    calendar: 'outlookcal:',
-    mail: 'outlookmail:',
-    sticky_notes: 'explorer.exe shell:Appsfolder\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe!App',
-    spotify: 'spotify:',
-    discord: 'discord:'
-  } : {
-    chrome: 'open -a "Google Chrome"',
-    google_chrome: 'open -a "Google Chrome"',
-    safari: 'open -a "Safari"',
-    calculator: 'open -a "Calculator"',
-    calc: 'open -a "Calculator"',
-    settings: 'open -a "System Settings"',
-    system_settings: 'open -a "System Settings"',
-    notepad: 'open -a "TextEdit"',
-    textedit: 'open -a "TextEdit"',
-    terminal: 'open -a "Terminal"',
-    vscode: 'open -a "Visual Studio Code"',
-    code: 'open -a "Visual Studio Code"',
-    finder: 'open -a "Finder"',
-    word: 'open -a "Microsoft Word"',
-    microsoft_word: 'open -a "Microsoft Word"',
-    excel: 'open -a "Microsoft Excel"',
-    microsoft_excel: 'open -a "Microsoft Excel"',
-    powerpoint: 'open -a "Microsoft PowerPoint"',
-    microsoft_powerpoint: 'open -a "Microsoft PowerPoint"',
-    mail: 'open -a "Mail"',
-    calendar: 'open -a "Calendar"',
-    maps: 'open -a "Maps"',
-    spotify: 'open -a "Spotify"',
-    music: 'open -a "Music"',
-    photos: 'open -a "Photos"'
-  };
+  const appMapping: Record<string, string> = isWindows
+    ? {
+        paint: 'mspaint.exe',
+        mspaint: 'mspaint.exe',
+        notepad: 'notepad.exe',
+        chrome: 'chrome.exe',
+        google_chrome: 'chrome.exe',
+        edge: 'msedge.exe',
+        msedge: 'msedge.exe',
+        microsoft_edge: 'msedge.exe',
+        firefox: 'firefox.exe',
+        calculator: 'ms-calculator:',
+        calc: 'ms-calculator:',
+        settings: 'ms-settings:',
+        control_panel: 'control.exe',
+        control: 'control.exe',
+        explorer: 'explorer.exe',
+        file_explorer: 'explorer.exe',
+        cmd: 'cmd.exe',
+        command_prompt: 'cmd.exe',
+        powershell: 'powershell.exe',
+        task_manager: 'taskmgr.exe',
+        taskmgr: 'taskmgr.exe',
+        camera: 'microsoft.windows.camera:',
+        photos: 'ms-photos:',
+        clock: 'ms-clock:',
+        store: 'ms-store:',
+        microsoft_store: 'ms-store:',
+        vscode: 'Code.exe',
+        code: 'Code.exe',
+        word: 'winword.exe',
+        msword: 'winword.exe',
+        microsoft_word: 'winword.exe',
+        excel: 'excel.exe',
+        microsoft_excel: 'excel.exe',
+        powerpoint: 'powerpnt.exe',
+        mspowerpoint: 'powerpnt.exe',
+        microsoft_powerpoint: 'powerpnt.exe',
+        outlook: 'outlook.exe',
+        teams: 'teams.exe',
+        weather: 'ms-weather:',
+        calendar: 'outlookcal:',
+        mail: 'outlookmail:',
+        sticky_notes:
+          'explorer.exe shell:Appsfolder\\Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe!App',
+        spotify: 'spotify:',
+        discord: 'discord:',
+      }
+    : {
+        chrome: 'open -a "Google Chrome"',
+        google_chrome: 'open -a "Google Chrome"',
+        safari: 'open -a "Safari"',
+        calculator: 'open -a "Calculator"',
+        calc: 'open -a "Calculator"',
+        settings: 'open -a "System Settings"',
+        system_settings: 'open -a "System Settings"',
+        notepad: 'open -a "TextEdit"',
+        textedit: 'open -a "TextEdit"',
+        terminal: 'open -a "Terminal"',
+        vscode: 'open -a "Visual Studio Code"',
+        code: 'open -a "Visual Studio Code"',
+        finder: 'open -a "Finder"',
+        word: 'open -a "Microsoft Word"',
+        microsoft_word: 'open -a "Microsoft Word"',
+        excel: 'open -a "Microsoft Excel"',
+        microsoft_excel: 'open -a "Microsoft Excel"',
+        powerpoint: 'open -a "Microsoft PowerPoint"',
+        microsoft_powerpoint: 'open -a "Microsoft PowerPoint"',
+        mail: 'open -a "Mail"',
+        calendar: 'open -a "Calendar"',
+        maps: 'open -a "Maps"',
+        spotify: 'open -a "Spotify"',
+        music: 'open -a "Music"',
+        photos: 'open -a "Photos"',
+      };
 
   const appRegex = /^(?:open|launch|start|run|show|execute)\s+(.+)$/i;
   const appMatch = query.match(appRegex);
@@ -222,13 +272,13 @@ export function getFastActionCommand(instructions: string, isWindows: boolean): 
     if (appMapping[nameUnderscored]) {
       return {
         type: 'launch',
-        commandOrUrl: appMapping[nameUnderscored]
+        commandOrUrl: appMapping[nameUnderscored],
       };
     }
     if (appMapping[nameRaw]) {
       return {
         type: 'launch',
-        commandOrUrl: appMapping[nameRaw]
+        commandOrUrl: appMapping[nameRaw],
       };
     }
   }
@@ -238,24 +288,35 @@ export function getFastActionCommand(instructions: string, isWindows: boolean): 
   if (appMapping[normalizedQuery]) {
     return {
       type: 'launch',
-      commandOrUrl: appMapping[normalizedQuery]
+      commandOrUrl: appMapping[normalizedQuery],
     };
   }
   if (appMapping[normalizedQueryRaw]) {
     return {
       type: 'launch',
-      commandOrUrl: appMapping[normalizedQueryRaw]
+      commandOrUrl: appMapping[normalizedQueryRaw],
     };
   }
 
   // 4. Substring fallback matching for friendly names and app launch anywhere in query
   const lowerQuery = query.toLowerCase();
   for (const appName of Object.keys(appMapping)) {
-    const regex = new RegExp(`\\b(open|launch|start|run|show|execute)\\s+${appName}\\b`, 'i');
+    const regex = new RegExp(
+      `\\b(open|launch|start|run|show|execute)\\s+${appName}\\b`,
+      'i',
+    );
     if (regex.test(lowerQuery)) {
+      // Guard: If query contains coordinating conjunctions or is long, let VLM agent handle the multi-step flow
+      if (
+        lowerQuery.includes(' and ') ||
+        lowerQuery.includes(' then ') ||
+        lowerQuery.split(/\s+/).length > 5
+      ) {
+        continue;
+      }
       return {
         type: 'launch',
-        commandOrUrl: appMapping[appName]
+        commandOrUrl: appMapping[appName],
       };
     }
   }
@@ -263,14 +324,163 @@ export function getFastActionCommand(instructions: string, isWindows: boolean): 
   for (const [webName, url] of Object.entries(websiteNames)) {
     const regex = new RegExp(`\\b(open|go\\s+to|visit)\\s+${webName}\\b`, 'i');
     if (regex.test(lowerQuery)) {
+      // Guard: If query contains coordinating conjunctions or is long, let VLM agent handle the multi-step flow
+      if (
+        lowerQuery.includes(' and ') ||
+        lowerQuery.includes(' then ') ||
+        lowerQuery.split(/\s+/).length > 5
+      ) {
+        continue;
+      }
       return {
         type: 'url',
-        commandOrUrl: url
+        commandOrUrl: url,
       };
     }
   }
 
   return null;
+}
+
+const aliasMap: Record<string, string> = {
+  notpad: 'notepad',
+  notepade: 'notepad',
+  'note pad': 'notepad',
+  notepads: 'notepad',
+  paint: 'paint',
+  mspaint: 'paint',
+  paints: 'paint',
+  calc: 'calc',
+  calculator: 'calculator',
+  caculator: 'calculator',
+  cmd: 'cmd',
+  command: 'cmd',
+  powershell: 'powershell',
+  ps: 'powershell',
+  chrome: 'chrome',
+  google: 'chrome',
+  edge: 'edge',
+  msedge: 'edge',
+};
+
+async function focusOrRestoreApp(
+  appNameRaw: string,
+  launchCmd: string,
+): Promise<boolean> {
+  const resolvedName = aliasMap[appNameRaw] || appNameRaw;
+  let focused = false;
+  if (process.platform === 'win32') {
+    const cleanName = resolvedName.replace(/[^a-zA-Z0-9]/g, '');
+    const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hWnd);
+}
+"@
+$proc = Get-Process | Where-Object { $_.ProcessName -like "*${cleanName}*" -or $_.MainWindowTitle -like "*${cleanName}*" } | Select-Object -First 1
+if ($proc) {
+    $hwnd = $proc.MainWindowHandle
+    if ($hwnd -ne [IntPtr]::Zero) {
+        if ([Win32]::IsIconic($hwnd)) {
+            [void][Win32]::ShowWindow($hwnd, 9) # SW_RESTORE
+        }
+        [void][Win32]::ShowWindow($hwnd, 5) # SW_SHOW
+        [void][Win32]::SetForegroundWindow($hwnd)
+    } else {
+        $wshell = New-Object -ComObject wscript.shell
+        [void]$wshell.AppActivate($proc.Id)
+    }
+    Write-Output "focused"
+} else {
+    Write-Output "notfound"
+}
+`.trim();
+
+    const tempFile = path.join(os.tmpdir(), `restore_win_${Date.now()}.ps1`);
+    try {
+      fs.writeFileSync(tempFile, psScript, 'utf8');
+      focused = await new Promise<boolean>((resolve) => {
+        exec(
+          `powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`,
+          (error, stdout, stderr) => {
+            try {
+              fs.unlinkSync(tempFile);
+            } catch (unlinkErr) {
+              console.error(
+                '[Hi-Bee Live] [Pre-Launch] Failed to delete temp PS script:',
+                unlinkErr,
+              );
+            }
+            if (error) {
+              console.error(
+                '[Hi-Bee Live] [Pre-Launch] PowerShell error:',
+                error,
+              );
+              console.error(
+                '[Hi-Bee Live] [Pre-Launch] PowerShell stderr:',
+                stderr,
+              );
+              resolve(false);
+            } else {
+              console.log(
+                '[Hi-Bee Live] [Pre-Launch] PowerShell stdout:',
+                stdout.trim(),
+              );
+              resolve(stdout.trim() === 'focused');
+            }
+          },
+        );
+      });
+    } catch (writeErr) {
+      console.error(
+        '[Hi-Bee Live] [Pre-Launch] Failed to write temp PS script:',
+        writeErr,
+      );
+      focused = false;
+    }
+  }
+
+  if (focused) {
+    console.log(
+      `[Hi-Bee Live] [Pre-Launch] "${appNameRaw}" is already running. Focused active window instead of launching new instance.`,
+    );
+    return true;
+  }
+
+  console.log(
+    `[Hi-Bee Live] [Pre-Launch] "${appNameRaw}" not running. Launching natively.`,
+  );
+  const isProtocol =
+    launchCmd.endsWith(':') ||
+    launchCmd.startsWith('ms-') ||
+    launchCmd.includes('://');
+  if (process.platform === 'win32' && isProtocol) {
+    await shell.openExternal(launchCmd);
+  } else {
+    let execCmd = launchCmd;
+    if (
+      process.platform === 'win32' &&
+      !execCmd.includes(' ') &&
+      !execCmd.includes('\\') &&
+      !execCmd.includes('/')
+    ) {
+      execCmd = `start "" "${execCmd}"`;
+    }
+    await new Promise<void>((resolve, reject) => {
+      exec(execCmd, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+  return false;
 }
 
 export const runAgent = async (
@@ -286,7 +496,10 @@ export const runAgent = async (
   assert(instructions, 'instructions is required');
 
   // ── Fast Actions Layer Interception ───────────────────────────────────────
-  const fastAction = getFastActionCommand(instructions, process.platform === 'win32');
+  const fastAction = getFastActionCommand(
+    instructions,
+    process.platform === 'win32',
+  );
   if (fastAction) {
     logger.info(`[runAgent] Fast Action Match: ${JSON.stringify(fastAction)}`);
     setState({
@@ -306,36 +519,56 @@ export const runAgent = async (
 
         try {
           const { desktopCapturer: dc } = await import('electron');
-          const sources = await dc.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
+          const sources = await dc.getSources({
+            types: ['screen'],
+            thumbnailSize: { width: 1920, height: 1080 },
+          });
           const primarySource = sources[0];
           if (!primarySource) throw new Error('No screen source available');
 
-          const screenshotBase64 = primarySource.thumbnail.toJPEG(80).toString('base64');
+          const screenshotBase64 = primarySource.thumbnail
+            .toJPEG(80)
+            .toString('base64');
 
-          const summarizePrompt = 'Describe what you see on this screen in 3-5 sentences. Focus on what application is open, what content is visible, and any notable UI elements. Be concise and speak naturally as if explaining to someone who cannot see the screen.';
+          const summarizePrompt =
+            'Describe what you see on this screen in 3-5 sentences. Focus on what application is open, what content is visible, and any notable UI elements. Be concise and speak naturally as if explaining to someone who cannot see the screen.';
 
           // Use Vertex AI client directly with the screenshot for vision-based description
           const { VertexAI } = await import('@google-cloud/vertexai');
           const { SettingStore: SS } = await import('@main/store/setting');
-          const { vertexProjectId: vPid, vertexLocation: vLoc } = await import('@main/env');
+          const { vertexProjectId: vPid, vertexLocation: vLoc } = await import(
+            '@main/env'
+          );
           const storeSet = SS.getStore();
           const pid = storeSet.vertexProjectId || vPid;
           const loc = storeSet.vertexLocation || vLoc;
-          const modelName = storeSet.vertexChatModelName || storeSet.vertexModelName || 'gemini-2.5-flash';
+          const modelName =
+            storeSet.vertexChatModelName ||
+            storeSet.vertexModelName ||
+            'gemini-2.5-flash';
 
           const vertex = new VertexAI({ project: pid, location: loc });
           const model = vertex.getGenerativeModel({ model: modelName });
           const ssResult = await model.generateContent({
-            contents: [{
-              role: 'user',
-              parts: [
-                { text: summarizePrompt },
-                { inlineData: { mimeType: 'image/jpeg', data: screenshotBase64 } },
-              ],
-            }],
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: summarizePrompt },
+                  {
+                    inlineData: {
+                      mimeType: 'image/jpeg',
+                      data: screenshotBase64,
+                    },
+                  },
+                ],
+              },
+            ],
           });
 
-          const summaryText = ssResult.response.candidates?.[0]?.content?.parts?.[0]?.text || 'I could not describe the screen right now. Please try again.';
+          const summaryText =
+            ssResult.response.candidates?.[0]?.content?.parts?.[0]?.text ||
+            'I could not describe the screen right now. Please try again.';
           const cleanSummary = summaryText
             .replace(/\*\*(.*?)\*\*/g, '$1')
             .replace(/\*(.*?)\*/g, '$1')
@@ -344,10 +577,14 @@ export const runAgent = async (
             .replace(/\n+/g, ' ')
             .trim();
 
-          logger.info(`[runAgent] Screen summarize result: "${cleanSummary.slice(0, 100)}..."`);
+          logger.info(
+            `[runAgent] Screen summarize result: "${cleanSummary.slice(0, 100)}..."`,
+          );
 
           // Broadcast to voice window for TTS playback
-          const { windowManager: wm } = await import('@main/services/windowManager');
+          const { windowManager: wm } = await import(
+            '@main/services/windowManager'
+          );
           wm.broadcast('voice:speak-text', cleanSummary);
 
           setState({
@@ -372,28 +609,10 @@ export const runAgent = async (
       } else if (fastAction.type === 'search' || fastAction.type === 'url') {
         await shell.openExternal(fastAction.commandOrUrl);
       } else if (fastAction.type === 'launch') {
-        const isProtocol = fastAction.commandOrUrl.endsWith(':') || fastAction.commandOrUrl.startsWith('ms-') || fastAction.commandOrUrl.includes('://');
-        if (process.platform === 'win32' && isProtocol) {
-          await shell.openExternal(fastAction.commandOrUrl);
-        } else {
-          let launchCmd = fastAction.commandOrUrl;
-          if (process.platform === 'win32') {
-            // For simple executables, use Windows start command to search registry App Paths
-            if (!launchCmd.includes(' ') && !launchCmd.includes('\\') && !launchCmd.includes('/')) {
-              launchCmd = `start "" "${launchCmd}"`;
-            }
-          }
-          await new Promise<void>((resolve, reject) => {
-            exec(launchCmd, (error) => {
-              if (error) {
-                logger.error(`[runAgent] Fast Action exec failed:`, error);
-                reject(error);
-              } else {
-                resolve();
-              }
-            });
-          });
-        }
+        const appRegex = /^(?:open|launch|start|run|show|execute)\s+(.+)$/i;
+        const appMatch = instructions.trim().match(appRegex);
+        const appNameRaw = appMatch ? appMatch[1].trim().toLowerCase() : 'app';
+        await focusOrRestoreApp(appNameRaw, fastAction.commandOrUrl);
       }
 
       // Mark as finished successfully
@@ -408,13 +627,83 @@ export const runAgent = async (
             from: 'gpt' as const,
             value: `Thought: I recognized this command ("${instructions}") as a native action and executed it directly without using the slower desktop VLM agent. Action: finished()`,
             timing: { start: Date.now(), end: Date.now(), cost: 0 },
-          }
-        ]
+          },
+        ],
       });
       return;
     } catch (err: any) {
-      logger.error('[runAgent] Fast Action execution failed, falling back to desktop VLM agent:', err);
+      logger.error(
+        '[runAgent] Fast Action execution failed, falling back to desktop VLM agent:',
+        err,
+      );
       // Fall through to standard VLM execution if direct launch fails
+    }
+  }
+
+  let currentInstructions = instructions;
+
+  // ── Smart Pre-Launch Interception ───────────────────────────────────────
+  const launchSplitRegex =
+    /^(?:open|launch|start|run|show|execute)\s+([a-zA-Z0-9_\s]+?)(?:\s+(?:and\s+then|then|and)\s+|,\s*)(.+)$/i;
+  const launchSplitMatch = instructions.trim().match(launchSplitRegex);
+  if (launchSplitMatch) {
+    const appNameRaw = launchSplitMatch[1].trim().toLowerCase();
+    const rest = launchSplitMatch[2].trim();
+    const appMapping: Record<string, string> =
+      process.platform === 'win32'
+        ? {
+            paint: 'mspaint.exe',
+            mspaint: 'mspaint.exe',
+            notepad: 'notepad.exe',
+            chrome: 'chrome.exe',
+            google_chrome: 'chrome.exe',
+            edge: 'msedge.exe',
+            msedge: 'msedge.exe',
+            microsoft_edge: 'msedge.exe',
+            firefox: 'firefox.exe',
+            calculator: 'ms-calculator:',
+            calc: 'ms-calculator:',
+            settings: 'ms-settings:',
+            control_panel: 'control.exe',
+            control: 'control.exe',
+            explorer: 'explorer.exe',
+            file_explorer: 'explorer.exe',
+            cmd: 'cmd.exe',
+            command_prompt: 'cmd.exe',
+            powershell: 'powershell.exe',
+            task_manager: 'taskmgr.exe',
+            taskmgr: 'taskmgr.exe',
+          }
+        : {
+            chrome: 'open -a "Google Chrome"',
+            google_chrome: 'open -a "Google Chrome"',
+            safari: 'open -a "Safari"',
+            calculator: 'open -a "Calculator"',
+            calc: 'open -a "Calculator"',
+            notepad: 'open -a "TextEdit"',
+            textedit: 'open -a "TextEdit"',
+            terminal: 'open -a "Terminal"',
+          };
+    const resolvedName = aliasMap[appNameRaw] || appNameRaw;
+    const nameUnderscored = resolvedName.replace(/\s+/g, '_');
+    const launchCmd =
+      appMapping[nameUnderscored] ||
+      appMapping[resolvedName] ||
+      appMapping[appNameRaw];
+    if (launchCmd) {
+      try {
+        await focusOrRestoreApp(appNameRaw, launchCmd);
+        currentInstructions = rest;
+        console.log(
+          `[Hi-Bee Live] [Pre-Launch] App pre-launch phase complete. Remaining task for agent: "${currentInstructions}"`,
+        );
+        await sleep(1000); // wait for window to spawn and gain focus
+      } catch (err) {
+        console.error(
+          `[Hi-Bee Live] [Pre-Launch] Pre-launch action failed:`,
+          err,
+        );
+      }
     }
   }
 
@@ -422,8 +711,8 @@ export const runAgent = async (
   const effectiveOperator = operatorOverride ?? settings.operator;
   const executionInstructions =
     effectiveOperator === Operator.LocalComputer
-      ? `Perform the task by taking a concrete desktop action immediately. Do not stop after a screenshot, do not answer with wait, and do not remain passive.\n\n${instructions}`
-      : instructions;
+      ? `Perform the task by taking a concrete desktop action immediately. Do not stop after a screenshot, do not answer with wait, and do not remain passive.\n\n${currentInstructions}`
+      : currentInstructions;
 
   logger.info('settings.operator', settings.operator);
   logger.info('runAgent.operatorOverride', operatorOverride ?? 'none');
@@ -501,7 +790,9 @@ export const runAgent = async (
         const args = Object.entries(latest.action_inputs ?? {})
           .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
           .join(', ');
-        currentAction = args ? `${latest.action_type}(${args})` : latest.action_type;
+        currentAction = args
+          ? `${latest.action_type}(${args})`
+          : latest.action_type;
       }
     }
     stepCounter = conversationsWithSoM.length;
@@ -527,7 +818,8 @@ export const runAgent = async (
         // Inject a synthetic user response so the agent can continue
         const syntheticMsg = {
           from: 'human' as const,
-          value: 'No user response received. Please continue the task autonomously.',
+          value:
+            'No user response received. Please continue the task autonomously.',
           timing: { start: Date.now(), end: Date.now(), cost: 0 },
         };
         setState({
@@ -549,22 +841,30 @@ export const runAgent = async (
         .reverse()
         .find((m) => m?.from === 'gpt');
       const lastPredictionText = lastGptMessage?.value || null;
-      
+
       const lastScreenshotMsg = [...conversationsWithSoM]
         .reverse()
         .find((m) => m?.screenshotBase64);
-      const lastScreenshotBase64 = lastScreenshotMsg?.screenshotBase64 || lastConv?.screenshotBase64 || null;
+      const lastScreenshotBase64 =
+        lastScreenshotMsg?.screenshotBase64 ||
+        lastConv?.screenshotBase64 ||
+        null;
 
-      mongoService.saveActiveAgentState({
-        sessionId: 'active-session',
-        status,
-        instructions: instructions || '',
-        lastStepIndex: conversationsWithSoM.length - 1,
-        lastPredictionText,
-        lastScreenshotBase64,
-      }).catch((err) => {
-        logger.warn('[runAgent] Failed to save active agent state to DB:', err);
-      });
+      mongoService
+        .saveActiveAgentState({
+          sessionId: 'active-session',
+          status,
+          instructions: instructions || '',
+          lastStepIndex: conversationsWithSoM.length - 1,
+          lastPredictionText,
+          lastScreenshotBase64,
+        })
+        .catch((err) => {
+          logger.warn(
+            '[runAgent] Failed to save active agent state to DB:',
+            err,
+          );
+        });
     }
   };
 
@@ -617,6 +917,7 @@ export const runAgent = async (
   let modelVersion = getModelVersion(settings.vlmProvider);
   let modelConfig: UITarsModelConfig = {
     baseURL: settings.vlmBaseUrl ?? '',
+    // secretlint-disable-next-line
     apiKey: settings.vlmApiKey ?? '',
     model: settings.vlmModelName ?? '',
     useResponsesApi: settings.useResponsesApi,
@@ -630,6 +931,7 @@ export const runAgent = async (
     const useResponsesApi = await ProxyClient.getRemoteVLMResponseApiSupport();
     modelConfig = {
       baseURL: FREE_MODEL_BASE_URL,
+      // secretlint-disable-next-line
       apiKey: '',
       model: '',
       useResponsesApi,
@@ -686,16 +988,18 @@ export const runAgent = async (
         errorMsg:
           'No VLM provider configured. Set Vertex AI (Settings → VLM) or provide VLM API key and base URL.',
       });
-      logger.error('[runAgent] Missing VLM credentials — aborting before agent loop');
+      logger.error(
+        '[runAgent] Missing VLM credentials — aborting before agent loop',
+      );
       return;
     }
     modelInstance = modelConfig;
     logger.info('[runAgent] Using UITarsModel (OpenAI-compatible)');
   }
 
-  const originalModel = (isGeminiProvider
-    ? modelInstance
-    : new UITarsModel(modelConfig)) as any;
+  const originalModel = (
+    isGeminiProvider ? modelInstance : new UITarsModel(modelConfig)
+  ) as any;
 
   const wrappedModel = {
     get factors() {
@@ -714,13 +1018,19 @@ export const runAgent = async (
       let finalConversations = conversations;
       if (images && images.length >= 3) {
         const len = images.length;
-        if (images[len - 1] === images[len - 2] && images[len - 2] === images[len - 3]) {
-          logger.warn('[runAgent] Detected 3 identical screenshots in a row. Injecting recovery hint.');
+        if (
+          images[len - 1] === images[len - 2] &&
+          images[len - 2] === images[len - 3]
+        ) {
+          logger.warn(
+            '[runAgent] Detected 3 identical screenshots in a row. Injecting recovery hint.',
+          );
           finalConversations = [
             ...conversations,
             {
               from: 'human' as const,
-              value: 'SYSTEM HINT: The screen has not changed for the last 3 steps. The previous action may have failed, clicked an empty/non-interactive area, or was blocked. Please try a different strategy, click a slightly offset position, scroll, or use a different hotkey to recover.',
+              value:
+                'SYSTEM HINT: The screen has not changed for the last 3 steps. The previous action may have failed, clicked an empty/non-interactive area, or was blocked. Please try a different strategy, click a slightly offset position, scroll, or use a different hotkey to recover.',
             },
           ];
         }

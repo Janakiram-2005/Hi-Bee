@@ -15,9 +15,10 @@ import {
   hideScreenWaterFlow,
   hideWidgetWindow,
   showScreenWaterFlow,
-  // showWidgetWindow,
+  showWidgetWindow,
 } from '../window/ScreenMarker';
 import { hideMainWindow /*, showMainWindow */ } from '../window';
+import { getVoiceWindow } from '../window/voiceWindow';
 import { SearchEngine } from '@ui-tars/operator-browser';
 
 export const getModelVersion = (
@@ -84,19 +85,28 @@ export const beforeAgentRun = async (
   const { background = false } = options;
   setRunBackground(background);
 
+  try {
+    const voiceWin = getVoiceWindow();
+    if (voiceWin && !voiceWin.isDestroyed()) {
+      voiceWin.hide();
+    }
+  } catch (err) {
+    console.error('[beforeAgentRun] Failed to hide voice window:', err);
+  }
+
   switch (operator) {
     case Operator.RemoteComputer:
       break;
     case Operator.RemoteBrowser:
       break;
     case Operator.LocalComputer:
-      // showWidgetWindow();
+      showWidgetWindow();
       showScreenWaterFlow();
       hideMainWindow();
       break;
     case Operator.LocalBrowser:
       hideMainWindow();
-      // showWidgetWindow();
+      showWidgetWindow();
       break;
     default:
       break;
@@ -127,6 +137,15 @@ export const afterAgentRun = (operator: Operator) => {
       break;
     default:
       break;
+  }
+
+  try {
+    const voiceWin = getVoiceWindow();
+    if (voiceWin && !voiceWin.isDestroyed()) {
+      voiceWin.showInactive();
+    }
+  } catch (err) {
+    console.error('[afterAgentRun] Failed to restore voice window:', err);
   }
 
   setRunBackground(false);

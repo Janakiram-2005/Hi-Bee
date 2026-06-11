@@ -22,7 +22,11 @@ async function run() {
     'gemini-1.0-pro',
     'gemini-2.0-flash-exp',
     'gemini-2.5-flash',
-    'gemini-2.5-pro'
+    'gemini-2.5-pro',
+    'gemini-3.0-flash',
+    'gemini-3.0-pro',
+    'gemini-3.5-flash',
+    'gemini-3.5-pro'
   ];
 
   for (const modelName of modelsToTry) {
