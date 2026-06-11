@@ -352,7 +352,7 @@ export class GeminiVertexModel {
 
   private async callWithRetry(
     contents: Content[],
-    maxRetries = 3,
+    maxRetries = 5,
   ): Promise<{ text: string; costTime: number; costTokens: number }> {
     const genModel = this.buildModel();
     let lastError: Error | null = null;
@@ -377,7 +377,17 @@ export class GeminiVertexModel {
       } catch (err: unknown) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt < maxRetries) {
-          const backoff = Math.min(500 * 2 ** attempt, 4000);
+          const errMsg = lastError.message;
+          const isRateLimit =
+            errMsg.includes('429') ||
+            errMsg.toLowerCase().includes('exhausted') ||
+            errMsg.toLowerCase().includes('too many requests');
+
+          let backoff = Math.min(500 * 2 ** attempt, 4000);
+          if (isRateLimit) {
+            // Stronger exponential backoff starting at 2000ms up to 15000ms for rate limits
+            backoff = Math.min(2000 * 2.5 ** attempt, 15000);
+          }
           logger.warn(
             `[GeminiVertexModel] attempt ${attempt + 1} failed: ${lastError.message}. Retry in ${backoff}ms`,
           );
