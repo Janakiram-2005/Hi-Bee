@@ -14,7 +14,6 @@ import {
   closeScreenMarker,
   hideScreenWaterFlow,
   hideWidgetWindow,
-  showScreenWaterFlow,
   showWidgetWindow,
 } from '../window/ScreenMarker';
 import { hideMainWindow /*, showMainWindow */ } from '../window';
@@ -101,7 +100,7 @@ export const beforeAgentRun = async (
       break;
     case Operator.LocalComputer:
       showWidgetWindow();
-      showScreenWaterFlow();
+      // showScreenWaterFlow();
       hideMainWindow();
       break;
     case Operator.LocalBrowser:
