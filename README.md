@@ -1,90 +1,164 @@
 <div align="center">
-  <img alt="Hi-Bee Icon" width="128" src="./apps/ui-tars/resources/icon.png">
-  <h1>Hi-Bee Desktop Agent</h1>
-  <p><strong>Your Ultimate Voice-Controlled Multi-modal Desktop Assistant</strong></p>
+
+<img alt="Hi-Bee Icon" width="128" src="./apps/ui-tars/resources/icon.png">
+
+# 🤖 Hi-Bee — Autonomous Voice-Controlled Desktop AI Agent
+
+![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
+![Electron](https://img.shields.io/badge/Electron-Desktop-47848F?style=for-the-badge&logo=electron&logoColor=white)
+![React](https://img.shields.io/badge/React-UI-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Google Cloud](https://img.shields.io/badge/Google_Cloud-STT-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)
+
+**Your ultimate voice-controlled, multi-modal desktop assistant. Hi-Bee can see your screen, listen to your commands, and autonomously control your computer's mouse and keyboard to complete complex tasks.**
+
+[🚀 Quick Start](#running-locally) • [📖 Architecture](#architecture) • [🧩 Features](#key-features) • [🗣️ Voice Control](#voice--vision)
+
 </div>
 
-<br/>
+---
 
-## Introduction
+## 📌 Table of Contents
 
-**Hi-Bee** is a cutting-edge multimodal AI Desktop Agent. Built upon the robust foundation of the [UI-TARS](https://github.com/bytedance/UI-TARS) project, Hi-Bee introduces a completely reimagined, sleek, and highly interactive **Voice Assistant interface**. 
-
-It transforms standard computer automation into a seamless, conversational experience, allowing you to control your local applications, browse the web, and execute complex workflows entirely via natural voice commands or text!
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Voice & Vision Integration](#voice--vision-integration)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Installation & Setup](#installation--setup)
+- [Running Locally](#running-locally)
+- [Configuration](#configuration)
+- [License](#license)
 
 ---
 
-## 🚀 Key Features
+## Overview
 
-- 🎙️ **Advanced Voice Assistant UI**: A beautifully designed, drag-and-resize Voice Panel that can expand into a full conversation history window or collapse into a minimalist desktop orb.
-- 🗣️ **Real-time Voice Interaction**: Integrated Google Cloud STT (Speech-To-Text) and multiple TTS (Text-To-Speech) engines including Google Free TTS and ElevenLabs for natural, low-latency conversations.
-- 💻 **Vision & Screen Understanding**: Powered by advanced Vision-Language Models (VLM) that can literally "see" your screen and take actions based on what's visible.
-- 🎯 **Native GUI Automation**: Precise programmatic control over your mouse and keyboard across Windows, macOS, and Linux to navigate interfaces exactly like a human would.
-- ⚙️ **Highly Customizable**: Dynamic settings panel to instantly configure API keys, change text-to-speech voices, toggle muting, and manage listening modes without restarting.
-- 🔒 **Local & Secure Execution**: Core operational processing runs fully locally on your device for maximum privacy.
+**Hi-Bee** is a next-generation native GUI agent built on top of the powerful UI-TARS foundation. It introduces a revolutionary **conversational interface** to desktop automation. 
 
----
+Instead of typing commands, Hi-Bee sits quietly on your screen as a sleek, glowing orb. When invoked, it expands into a full command center. You can speak naturally, and Hi-Bee will use Vision-Language Models (VLMs) to visually understand your current desktop screen and execute native mouse clicks and keystrokes to accomplish the goal—all while talking back to you!
 
-## 🛠️ The Flow: How Hi-Bee Works
-
-1. **Wake Up & Listen**: Hi-Bee sits quietly as a glowing orb on your desktop. Click the microphone or use a hotkey to wake it up.
-2. **Command Processing**: Speak your command naturally (e.g., *"Hi-Bee, open Visual Studio Code and create a new Python project"*). Your voice is instantly streamed via Cloud STT and transcribed in real-time on the panel.
-3. **Agent Planning**: The underlying AI model receives the text, analyzes your current desktop screen (via screenshot capturing), and determines the exact series of mouse movements and keyboard strokes needed.
-4. **Execution**: The local hybrid GUI operator executes the plan. You can watch Hi-Bee physically move your mouse and click on the right buttons!
-5. **Vocal Feedback**: Once the task is complete, Hi-Bee uses Text-to-Speech to verbally inform you of the result (e.g., *"I have created your new Python project"*), while adding the log to your chat history.
-
----
-
-## 📦 Quick Start
-
-### 1. Prerequisites
-- **Node.js** (v18+)
-- **Python** (v3.10+)
-- **pnpm** package manager
-
-### 2. Install Dependencies
-```bash
-# Clone the repository
-git clone https://github.com/Janakiram-2005/Hi-Bee.git
-cd Hi-Bee
-
-# Install all Node.js dependencies
-npx pnpm install
-
-# Install Python backend dependencies
-cd hybrid_gui_agent
-pip install -r requirements.txt
-cd ..
+```
+Your Voice ──► Cloud STT ──► AI Brain (VLM) ──► Native Desktop Operator ──► Computer
+        ▲                                                                        │
+        └──────────────────────── Screen Capture Feedback ───────────────────────┘
 ```
 
-### 3. Run Hi-Bee Locally
-To launch the desktop agent in development mode:
+---
+
+## Key Features
+
+| Feature | Description |
+|---|---|
+| 🎙️ **Real-Time Voice STT** | Speak naturally. Powered by Google Cloud Speech-to-Text for lightning-fast transcription. |
+| 🔊 **Dynamic TTS Voices** | Agent speaks back using Google Free TTS or premium ElevenLabs voices. |
+| 👁️ **Screen Vision** | Takes screenshots of your desktop to visually ground actions, just like a human. |
+| 🖱️ **Native GUI Control** | Autonomously takes over your mouse and keyboard to click, type, and navigate OS interfaces. |
+| 🪟 **Adaptive UI Widget** | Sleek orb mode for standby, expanding into a beautifully designed Voice Panel when active. |
+| ↕️ **Smart Resizing** | Drag the panel to resize; the built-in chat history automatically expands to fill the space! |
+| ⚙️ **Live Settings** | Swap AI models, change TTS voices, or update API keys on the fly without restarting. |
+| 🔒 **Local Execution** | Hybrid Python/Node architecture ensures local, secure execution of OS-level commands. |
+
+---
+
+## Voice & Vision Integration
+
+Hi-Bee bridges the gap between conversational AI and practical computer usage:
+
+- **The Flow:** Click the microphone and say, *"Hi-Bee, open Visual Studio Code and create a Python file."*
+- **The Brain:** The AI interprets the command and captures your screen.
+- **The Action:** You watch as your mouse physically moves to open the start menu, types "VS Code", opens the app, and creates the file.
+- **The Feedback:** Hi-Bee announces *"I have successfully created your Python file."*
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACE LAYER                        │
+│                                                                     │
+│   ┌───────────────────────┐        ┌──────────────────────────┐    │
+│   │  Floating Orb Mode    │        │  Expanded Voice Panel    │    │
+│   │                       │        │                          │    │
+│   │  • Always on top      │        │  • Live STT Transcript   │    │
+│   │  • Pulse animations   │        │  • Expandable Chat Hist  │    │
+│   │  • Drag to move       │        │  • Voice/Vision Toggles  │    │
+│   └──────────┬────────────┘        └────────────┬─────────────┘    │
+│              │             Electron IPC         │                  │
+└──────────────┼───────────────────────────────────┼──────────────────┘
+               │                                   │
+┌──────────────▼───────────────────────────────────▼──────────────────┐
+│                      NODE.JS MAIN PROCESS                           │
+│                                                                     │
+│   ┌─────────────────┐    ┌────────────────┐    ┌─────────────────┐ │
+│   │  Cloud STT      │    │  TTS Engine    │    │  Native Bridge  │ │
+│   │  Google Speech  │    │  ElevenLabs    │    │  Child Process  │ │
+│   └─────────┬───────┘    └────────┬───────┘    └────────┬────────┘ │
+└─────────────┼─────────────────────┼─────────────────────┼──────────┘
+              │                     │                     │
+┌─────────────▼─────────────────────▼─────────────────────▼──────────┐
+│                      PYTHON HYBRID OPERATOR                         │
+│                                                                     │
+│  • Captures Screen   • Vision-Language Model   • Mouse/Keyboard    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Prerequisites
+
+- **Node.js** (v18 or higher)
+- **Python** (v3.10 or higher)
+- **pnpm** (Package manager)
+- API Keys for Google Cloud (STT) and an LLM provider (e.g., Anthropic, Vertex AI)
+
+---
+
+## Installation & Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/Janakiram-2005/Hi-Bee.git
+   cd Hi-Bee
+   ```
+
+2. **Install Node.js Dependencies:**
+   ```bash
+   npx pnpm install
+   ```
+
+3. **Install Python Backend Dependencies:**
+   ```bash
+   cd hybrid_gui_agent
+   pip install -r requirements.txt
+   cd ..
+   ```
+
+---
+
+## Running Locally
+
+To launch the desktop application in development mode:
+
 ```bash
 npx pnpm run dev:ui-tars
 ```
 
-### 4. Configuration
-When you launch the app, click the **Settings (Gear Icon)** in the Voice Panel to:
-- Add your Google Cloud STT credentials for lightning-fast voice recognition.
-- Configure your preferred TTS Provider (Google Free TTS or ElevenLabs) and select your favorite voice.
-- Set up your VLM (Vision Language Model) API keys (like Anthropic, OpenAI, or Vertex AI).
+A glowing robot orb will appear on your screen. Click the **gear icon** inside the expanded panel to configure your settings.
 
 ---
 
-## 🎨 UI Overview
+## Configuration
 
-- **Minimalist Orb**: When idle, Hi-Bee shrinks into a non-intrusive floating robot orb that stays on top of your windows.
-- **Voice Panel**: Click the orb to expand it into the main command center.
-- **Live Transcript**: Watch your spoken words appear instantly in the chat bar.
-- **Dynamic Resize**: Drag the corners or edges to stretch the panel. The Chat History window will automatically expand to fill the extra space!
-- **Control Row**: Instantly mute TTS, disable the camera/vision, or completely shut down the agent from the quick-access bottom row.
+In the settings panel, you can configure:
+1. **Google Cloud Credentials:** Point to your `.json` service account file for Speech-to-Text.
+2. **TTS Provider:** Choose between Google Free TTS or provide an ElevenLabs API key.
+3. **Vision Model:** Select your preferred VLM (e.g., `doubao-1-5-vision-pro`, `claude-3-5-sonnet`) and insert your API key.
+4. **Voice Settings:** Change your wake phrase, language, and volume level.
 
 ---
 
-## 🤝 Contributing
+## License
 
-We welcome contributions! Feel free to open issues or submit Pull Requests to the `main` branch. 
-
-## 📄 License
-
-This project is licensed under the Apache License 2.0. Built upon UI-TARS.
+This project is licensed under the Apache License 2.0. Built upon the UI-TARS framework.
