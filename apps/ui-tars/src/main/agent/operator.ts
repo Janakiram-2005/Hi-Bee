@@ -142,7 +142,15 @@ export class NutJSElectronOperator extends NutJSOperator {
           return resolve([]);
         }
         try {
-          const elements = JSON.parse(stdout.trim());
+          const raw = stdout.trim();
+          // Escape raw control characters (ASCII 0x00 to 0x1F, like raw newlines/tabs)
+          const sanitized = raw.replace(/[\x00-\x1F\x7F-\x9F]/g, (char) => {
+            if (char === '\n') return '\\n';
+            if (char === '\r') return '\\r';
+            if (char === '\t') return '\\t';
+            return '';
+          });
+          const elements = JSON.parse(sanitized);
           if (Array.isArray(elements)) {
             return resolve(elements);
           }
@@ -280,15 +288,10 @@ export class NutJSElectronOperator extends NutJSOperator {
   async execute(params: ExecuteParams): Promise<ExecuteOutput> {
     // 1. Correct DPI scaling factor mapping on Windows and macOS
     const scaleFactor = params.scaleFactor || 1;
-    const isWindows = process.platform === 'win32';
     const adjustedParams = {
       ...params,
-      screenWidth: isWindows
-        ? params.screenWidth
-        : params.screenWidth / scaleFactor,
-      screenHeight: isWindows
-        ? params.screenHeight
-        : params.screenHeight / scaleFactor,
+      screenWidth: params.screenWidth / scaleFactor,
+      screenHeight: params.screenHeight / scaleFactor,
     };
 
     const { action_type, action_inputs } = adjustedParams.parsedPrediction;
@@ -412,9 +415,9 @@ export class NutJSElectronOperator extends NutJSOperator {
             // Pre-click highlight
             await this._preClickHighlight(cx_logical, cy_logical);
 
-            // Execute mouse click using physical coordinates
+            // Execute mouse click using logical coordinates
             await mouse.setPosition(
-              new Point(Math.round(cx_phys), Math.round(cy_phys)),
+              new Point(Math.round(cx_logical), Math.round(cy_logical)),
             );
             await sleep(100);
             if (

@@ -57,11 +57,26 @@ import { registerCallUserTimer, cancelCallUserTimer } from './stopAgentRun';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface FastAction {
-  type: 'launch' | 'search' | 'url' | 'summarize';
+  type: 'launch' | 'search' | 'url' | 'summarize' | 'window_action';
   commandOrUrl: string;
+  windowAction?: 'minimize' | 'maximize' | 'close';
+  backgroundOverride?: boolean;
 }
 
 export function getFastActionCommand(
+  instructions: string,
+  isWindows: boolean,
+): FastAction | null {
+  const result = _getFastActionCommand(instructions, isWindows);
+  if (result) {
+    if (/in the background/i.test(instructions) || /background mode/i.test(instructions)) {
+      result.backgroundOverride = true;
+    }
+  }
+  return result;
+}
+
+function _getFastActionCommand(
   instructions: string,
   isWindows: boolean,
 ): FastAction | null {
@@ -339,6 +354,50 @@ export function getFastActionCommand(
     }
   }
 
+  // 5. Window Actions
+  const windowActionRegex = /^(minimize|maximize|close)\s+(?:the\s+)?(.+)$/i;
+  const windowActionMatch = query.match(windowActionRegex);
+  if (windowActionMatch) {
+    return {
+      type: 'window_action',
+      commandOrUrl: windowActionMatch[2].trim(),
+      windowAction: windowActionMatch[1].toLowerCase() as 'minimize' | 'maximize' | 'close',
+    };
+  }
+
+  // 6. Telugu/Regional language format: "[App] ని క్లోజ్ చేయి"
+  const teluguRegex = /^(.+?)(?:\s+ని|\s+ను)?\s+(క్లోజ్|ఓపెన్|మినిమైజ్|మాక్సిమైజ్|మూసివేయు|తెరవండి|తెరచు)(?:\s+చేయి|\s+చేయండి)?$/i;
+  const teluguMatch = query.match(teluguRegex);
+  if (teluguMatch) {
+    let rawTarget = teluguMatch[1].trim();
+    const rawAction = teluguMatch[2];
+    let actionType: 'launch' | 'minimize' | 'maximize' | 'close' = 'launch';
+    
+    if (rawAction.includes('క్లోజ్') || rawAction.includes('మూసివేయు')) actionType = 'close';
+    else if (rawAction.includes('మినిమైజ్')) actionType = 'minimize';
+    else if (rawAction.includes('మాక్సిమైజ్')) actionType = 'maximize';
+    else actionType = 'launch';
+
+    // Remove any trailing words from target like 'అప్లికేషన్'
+    rawTarget = rawTarget.replace(/\s+(అప్లికేషన్|యాప్)$/i, '').trim();
+
+    if (actionType === 'launch') {
+      const normalizedTarget = rawTarget.toLowerCase().replace(/\s+/g, '_');
+      if (appMapping[normalizedTarget] || appMapping[rawTarget.toLowerCase()]) {
+        return {
+          type: 'launch',
+          commandOrUrl: appMapping[normalizedTarget] || appMapping[rawTarget.toLowerCase()],
+        };
+      }
+    } else {
+      return {
+        type: 'window_action',
+        commandOrUrl: rawTarget,
+        windowAction: actionType,
+      };
+    }
+  }
+
   return null;
 }
 
@@ -363,9 +422,47 @@ const aliasMap: Record<string, string> = {
   msedge: 'edge',
 };
 
+async function launchInBackgroundWindows(cmdOrUrl: string): Promise<void> {
+  const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}
+"@
+$prevHwnd = [Win32]::GetForegroundWindow()
+Start-Process "${cmdOrUrl}"
+Start-Sleep -Milliseconds 800
+$newHwnd = [Win32]::GetForegroundWindow()
+if ($newHwnd -ne $prevHwnd -and $newHwnd -ne [IntPtr]::Zero) {
+    [void][Win32]::ShowWindow($newHwnd, 6) # SW_MINIMIZE
+}
+[void][Win32]::SetForegroundWindow($prevHwnd)
+`.trim();
+  const tempFile = path.join(os.tmpdir(), `bg_launch_${Date.now()}.ps1`);
+  try {
+    fs.writeFileSync(tempFile, psScript, 'utf8');
+    await new Promise<void>((resolve) => {
+      exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`, () => {
+        try { fs.unlinkSync(tempFile); } catch (e) {}
+        resolve();
+      });
+    });
+  } catch (err) {
+    console.error('[launchInBackgroundWindows] Error:', err);
+  }
+}
+
 async function focusOrRestoreApp(
   appNameRaw: string,
   launchCmd: string,
+  background: boolean = false,
 ): Promise<boolean> {
   const resolvedName = aliasMap[appNameRaw] || appNameRaw;
   let focused = false;
@@ -388,14 +485,18 @@ $proc = Get-Process | Where-Object { $_.ProcessName -like "*${cleanName}*" -or $
 if ($proc) {
     $hwnd = $proc.MainWindowHandle
     if ($hwnd -ne [IntPtr]::Zero) {
-        if ([Win32]::IsIconic($hwnd)) {
-            [void][Win32]::ShowWindow($hwnd, 9) # SW_RESTORE
+        if ("${background}" -ne "true") {
+            if ([Win32]::IsIconic($hwnd)) {
+                [void][Win32]::ShowWindow($hwnd, 9) # SW_RESTORE
+            }
+            [void][Win32]::ShowWindow($hwnd, 5) # SW_SHOW
+            [void][Win32]::SetForegroundWindow($hwnd)
         }
-        [void][Win32]::ShowWindow($hwnd, 5) # SW_SHOW
-        [void][Win32]::SetForegroundWindow($hwnd)
     } else {
-        $wshell = New-Object -ComObject wscript.shell
-        [void]$wshell.AppActivate($proc.Id)
+        if ("${background}" -ne "true") {
+            $wshell = New-Object -ComObject wscript.shell
+            [void]$wshell.AppActivate($proc.Id)
+        }
     }
     Write-Output "focused"
 } else {
@@ -471,7 +572,11 @@ if ($proc) {
       !execCmd.includes('\\') &&
       !execCmd.includes('/')
     ) {
-      execCmd = `start "" "${execCmd}"`;
+      if (background) {
+        execCmd = `start /MIN "" "${execCmd}"`;
+      } else {
+        execCmd = `start "" "${execCmd}"`;
+      }
     }
     await new Promise<void>((resolve, reject) => {
       exec(execCmd, (error) => {
@@ -607,12 +712,59 @@ export const runAgent = async (
           // Fall through to standard VLM agent
         }
       } else if (fastAction.type === 'search' || fastAction.type === 'url') {
-        await shell.openExternal(fastAction.commandOrUrl);
+        const bg = fastAction.backgroundOverride || runOptions.background;
+        if (bg && process.platform === 'win32') {
+          await launchInBackgroundWindows(fastAction.commandOrUrl);
+        } else {
+          await shell.openExternal(fastAction.commandOrUrl);
+        }
       } else if (fastAction.type === 'launch') {
         const appRegex = /^(?:open|launch|start|run|show|execute)\s+(.+)$/i;
         const appMatch = instructions.trim().match(appRegex);
-        const appNameRaw = appMatch ? appMatch[1].trim().toLowerCase() : 'app';
-        await focusOrRestoreApp(appNameRaw, fastAction.commandOrUrl);
+        let appNameRaw = appMatch ? appMatch[1].trim().toLowerCase() : 'app';
+        appNameRaw = appNameRaw.replace(/in the background/i, '').trim();
+        const bg = fastAction.backgroundOverride || runOptions.background;
+        if (bg && process.platform === 'win32') {
+          await launchInBackgroundWindows(fastAction.commandOrUrl);
+        } else {
+          await focusOrRestoreApp(appNameRaw, fastAction.commandOrUrl, false);
+        }
+      } else if (fastAction.type === 'window_action' && process.platform === 'win32') {
+        const appNameRaw = fastAction.commandOrUrl;
+        const resolvedName = aliasMap[appNameRaw] || appNameRaw;
+        const cleanName = resolvedName.replace(/[^a-zA-Z0-9 ]/g, '');
+        let actionCode = '';
+        if (fastAction.windowAction === 'minimize') actionCode = '[void][Win32]::ShowWindow($hwnd, 6)';
+        else if (fastAction.windowAction === 'maximize') actionCode = '[void][Win32]::ShowWindow($hwnd, 3)';
+        else if (fastAction.windowAction === 'close') actionCode = '[void][Win32]::SendMessage($hwnd, 0x0010, 0, 0)';
+
+        const psScript = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, int wParam, int lParam);
+}
+"@
+$proc = Get-Process | Where-Object { $_.ProcessName -like "*${cleanName}*" -or $_.MainWindowTitle -like "*${cleanName}*" } | Select-Object -First 1
+if ($proc) {
+    $hwnd = $proc.MainWindowHandle
+    if ($hwnd -ne [IntPtr]::Zero) {
+        ${actionCode}
+    }
+}
+`.trim();
+        const tempFile = path.join(os.tmpdir(), `window_action_${Date.now()}.ps1`);
+        fs.writeFileSync(tempFile, psScript, 'utf8');
+        await new Promise<void>((resolve) => {
+          exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempFile}"`, () => {
+            try { fs.unlinkSync(tempFile); } catch (e) {}
+            resolve();
+          });
+        });
       }
 
       // Mark as finished successfully

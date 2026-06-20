@@ -127,20 +127,28 @@ export async function transcribeAudio(
     return { transcript: '', confidence: 0, isFinal: true };
   }
 
+  // Google Cloud Speech-to-Text sync API fails on > 1 min audio.
+  // 1 min of 48kHz Opus is ~1MB base64. Reject gracefully if > 1.5MB to avoid 400 spam.
+  if (audioBase64.length > 1500000) {
+    logger.warn(`[cloudSTT] Audio exceeds sync length limit (${audioBase64.length} bytes). Dropping.`);
+    return { transcript: '', confidence: 0, isFinal: true };
+  }
+
   const { encoding, sampleRateHertz } = resolveEncoding(mimeType);
   const bcp47 = resolveBcp47(languageCode);
 
   // Always include English alternatives for Indian languages so English
   // wake phrases ("Hey Buddy", app names, etc.) are recognized even when
   // primary STT language is Telugu/Hindi/Tamil/Kannada/Malayalam etc.
+  // Also cross-pollinate with other common Indian languages.
   const alternativeLanguageCodes: string[] = [];
   const isIndianRegional = /^(te|hi|ta|kn|ml|bn|mr|gu|pa)-IN/.test(bcp47);
   if (isIndianRegional) {
-    alternativeLanguageCodes.push('en-IN', 'en-US');
+    alternativeLanguageCodes.push('en-IN', 'hi-IN', 'en-US');
   } else if (bcp47 === 'en-IN') {
-    alternativeLanguageCodes.push('hi-IN', 'te-IN', 'ta-IN');
+    alternativeLanguageCodes.push('te-IN', 'hi-IN', 'ta-IN');
   } else if (bcp47 === 'en-US' || bcp47 === 'en-GB') {
-    alternativeLanguageCodes.push('en-IN');
+    alternativeLanguageCodes.push('en-IN', 'te-IN', 'hi-IN');
   }
 
   const body = {

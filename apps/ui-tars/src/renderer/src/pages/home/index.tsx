@@ -26,6 +26,7 @@ import {
 
 import computerUseImg from '@resources/home_img/computer_use.png?url';
 import browserUseImg from '@resources/home_img/browser_use.png?url';
+import navigationTestImg from '@resources/home_img/navigation_test.png?url';
 import { sleep } from '@ui-tars/shared/utils';
 
 import { FreeTrialDialog } from '../../components/AlertDialog/freeTrialDialog';
@@ -154,6 +155,10 @@ const Home = () => {
   };
   /** local click logic end */
 
+  const toTestNavigation = () => {
+    navigate('/test-navigation');
+  };
+
   return (
     <div className="w-full h-full flex flex-col">
       <DragArea></DragArea>
@@ -161,7 +166,7 @@ const Home = () => {
         <h1 className="text-2xl font-semibold mt-1 mb-8">
           Welcome to UI-TARS Desktop
         </h1>
-        <Alert className="mb-4 w-[824px]">
+        <Alert className="mb-4 w-[1248px]">
           <Info className="h-4 w-4 mt-2" />
           <AlertDescription>
             <div className="flex items-center">
@@ -243,6 +248,29 @@ const Home = () => {
                 className="w-full"
               >
                 Use Local Browser
+              </Button>
+            </CardFooter>
+          </Card>
+          <Card className="w-[400px] py-5">
+            <CardHeader className="px-5">
+              <CardTitle>VLM Vision Benchmark</CardTitle>
+              <CardDescription>
+                Evaluate and benchmark the precision and accuracy of vision-based navigation models on challenging UI test scenarios.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-5">
+              <img
+                src={navigationTestImg}
+                alt=""
+                className="w-full h-full aspect-video object-fill rounded-lg"
+              />
+            </CardContent>
+            <CardFooter className="gap-3 px-5 flex justify-between">
+              <Button
+                onClick={toTestNavigation}
+                className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-lg hover:shadow-indigo-500/20 transition-all duration-300"
+              >
+                Start Test Sandbox
               </Button>
             </CardFooter>
           </Card>

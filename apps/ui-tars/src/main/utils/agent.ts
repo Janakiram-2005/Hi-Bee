@@ -14,6 +14,7 @@ import {
   closeScreenMarker,
   hideScreenWaterFlow,
   hideWidgetWindow,
+  showScreenWaterFlow,
 } from '../window/ScreenMarker';
 import { hideMainWindow /*, showMainWindow */ } from '../window';
 import { getVoiceWindow } from '../window/voiceWindow';
@@ -83,14 +84,9 @@ export const beforeAgentRun = async (
   const { background = false } = options;
   setRunBackground(background);
 
-  try {
-    const voiceWin = getVoiceWindow();
-    if (voiceWin && !voiceWin.isDestroyed()) {
-      voiceWin.hide();
-    }
-  } catch (err) {
-    console.error('[beforeAgentRun] Failed to hide voice window:', err);
-  }
+  // Keep the voice/avatar window (bot) visible during execution so the user
+  // can see the thinking/action status. The screenshot capturing mechanism
+  // in operator.ts will handle hiding and restoring it temporarily during screenshots.
 
   switch (operator) {
     case Operator.RemoteComputer:
@@ -99,12 +95,13 @@ export const beforeAgentRun = async (
       break;
     case Operator.LocalComputer:
       // showWidgetWindow();
-      // showScreenWaterFlow();
+      showScreenWaterFlow();
       hideMainWindow();
       break;
     case Operator.LocalBrowser:
       hideMainWindow();
       // showWidgetWindow();
+      showScreenWaterFlow();
       break;
     default:
       break;
@@ -129,6 +126,7 @@ export const afterAgentRun = (operator: Operator) => {
       break;
     case Operator.LocalBrowser:
       hideWidgetWindow();
+      hideScreenWaterFlow();
       // if (restoreMainWindow) {
       //   showMainWindow();
       // }

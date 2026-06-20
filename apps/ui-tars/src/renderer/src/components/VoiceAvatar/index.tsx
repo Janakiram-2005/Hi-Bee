@@ -20,6 +20,7 @@ import { api } from '@renderer/api';
 import { RobotAvatar } from './RobotAvatar';
 import { VoicePanel } from './VoicePanel';
 import { VoicePermissionGate } from './VoicePermissionGate';
+import { Resizable } from 're-resizable';
 
 import './VoiceAvatar.css';
 
@@ -35,6 +36,54 @@ export function VoiceAvatarWidget() {
 function VoiceAvatarInner({ settings }: { settings: any }) {
   const [permissionsReady, setPermissionsReady] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [pythonState, setPythonState] = useState<{
+    vadState: string;
+    wsState: string;
+    queueDepth: number;
+    currentAction: any;
+  }>({
+    vadState: 'SLEEPING',
+    wsState: 'CLOSED',
+    queueDepth: 0,
+    currentAction: null,
+  });
+
+  useEffect(() => {
+    const handler = (_event: any, payload: any) => {
+      const { event, data } = payload;
+      setPythonState((prev) => {
+        const next = { ...prev };
+        if (event === 'vad:wake') {
+          next.vadState = 'LISTENING';
+        } else if (event === 'vad:sleep') {
+          next.vadState = 'SLEEPING';
+          next.wsState = 'CLOSED';
+          next.queueDepth = 0;
+          next.currentAction = null;
+        } else if (event === 'ws:connected') {
+          next.wsState = 'CONNECTED';
+        } else if (event === 'ws:closed') {
+          next.wsState = 'CLOSED';
+        } else if (event === 'ws:error') {
+          next.wsState = 'ERROR';
+        } else if (event === 'queue:enqueue') {
+          next.queueDepth++;
+        } else if (event === 'queue:dispatch') {
+          next.currentAction = data;
+          if (next.queueDepth > 0) next.queueDepth--;
+        } else if (event === 'queue:done') {
+          next.currentAction = null;
+          if (next.queueDepth > 0) next.queueDepth--;
+        }
+        return next;
+      });
+    };
+    const unsubscribe = window.electron?.ipcRenderer?.on('hibee:pipeline-status', handler);
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   const {
     avatarState,
     isExpanded,
@@ -56,6 +105,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     voiceWakeupMode,
     clearHistory,
     setCurrentTask,
+    runInBackground,
   } = useVoiceStore();
 
   // ── Global VLM automation store state ────────────────────────────────────
@@ -87,6 +137,12 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   // ── Overrides from updateAgentState ──────────────────────────────────────
   const [overrideState, setOverrideState] = useState<string | null>(null);
   const [overrideText, setOverrideText] = useState<string | null>(null);
+
+  // ── Controlled panel size ────────────────────────────────────────────────
+  const [panelSize, setPanelSize] = useState<{ width: number | string; height: number | string }>({
+    width: 340,
+    height: 'auto',
+  });
 
   // Expose updateAgentState to window
   useEffect(() => {
@@ -153,7 +209,34 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   let effectiveState = 'idle';
   let effectiveText: string | null = null;
 
-  if (overrideState) {
+  if (settings?.googleApiSource === 'agent_builder') {
+    if (pythonState.wsState === 'ERROR') {
+      effectiveState = 'error';
+      effectiveText = 'WebSocket error occurred';
+    } else if (pythonState.queueDepth > 0 || pythonState.currentAction) {
+      const actionName = pythonState.currentAction?.name || '';
+      const actionLower = actionName.toLowerCase();
+      if (actionLower.includes('type') || actionLower.includes('write')) {
+        effectiveState = 'typing';
+        effectiveText = 'Writing text...';
+      } else if (actionLower.includes('launch') || actionLower.includes('open')) {
+        effectiveState = 'navigating';
+        effectiveText = `Launching ${pythonState.currentAction?.args?.app_name || 'app'}...`;
+      } else {
+        effectiveState = 'executing';
+        effectiveText = 'Executing background task...';
+      }
+    } else if (pythonState.wsState === 'CONNECTED') {
+      effectiveState = 'listening';
+      effectiveText = 'Listening... (Vertex Live WSS)';
+    } else if (pythonState.vadState === 'LISTENING') {
+      effectiveState = 'listening';
+      effectiveText = 'Ambient listening active';
+    } else {
+      effectiveState = 'idle';
+      effectiveText = 'Hi-Bee is sleeping (monitoring locally)';
+    }
+  } else if (overrideState) {
     effectiveState = overrideState;
     effectiveText = overrideText;
   } else if (errorMsgOverride) {
@@ -272,6 +355,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
           history: ctxHistory,
           language: selectedLanguage,
           taskId: currentTaskId ?? undefined,
+          runInBackground,
         });
 
         addTurn({
@@ -515,9 +599,42 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
         )}
 
         {/* Expanded panel (renders above orb) */}
-        {isExpanded && (
+        <Resizable
+          style={{
+            display: isExpanded ? 'flex' : 'none',
+            position: 'absolute',
+            bottom: '84px',
+            right: 0,
+            zIndex: 100
+          }}
+          className="voice-resizable-wrapper"
+          size={panelSize}
+          onResizeStop={(e, direction, ref, d) => {
+            setPanelSize({
+              width: ref.style.width,
+              height: ref.style.height,
+            });
+          }}
+          minWidth={300}
+          maxWidth={600}
+          enable={{ top: true, right: true, bottom: true, left: true, topRight: true, bottomRight: true, bottomLeft: true, topLeft: true }}
+          handleClasses={{
+            top: 'resize-handle-top',
+            right: 'resize-handle-right',
+            bottom: 'resize-handle-bottom',
+            left: 'resize-handle-left',
+            topRight: 'resize-handle-tr',
+            bottomRight: 'resize-handle-br',
+            bottomLeft: 'resize-handle-bl',
+            topLeft: 'resize-handle-tl',
+          }}
+        >
           <VoicePanel
+            style={{ width: '100%', height: '100%' }}
             onClose={() => setExpanded(false)}
+            onHeightReset={() => {
+              setPanelSize(prev => ({ ...prev, height: 'auto' }));
+            }}
             onStopTTS={stopTTS}
             onPauseTTS={pauseTTS}
             onResumeTTS={resumeTTS}
@@ -526,8 +643,9 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
             isListening={isListening ? isListening() : false}
             onSendText={handleCommit}
             onReset={handleReset}
+            isHeightAuto={panelSize.height === 'auto'}
           />
-        )}
+        </Resizable>
 
         {/* Floating Speech Bubble */}
         {showBubble && (

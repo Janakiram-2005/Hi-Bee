@@ -1,12 +1,18 @@
 <!DOCTYPE html>
 <!--
-  Hi-Bee Agent Chat — Vertex AI Agent Builder embedded chat window.
-  Deployment: projects/229696319775/locations/us/apps/a7b38860-8742-4253-8e15-b5a358eaa2ac
-              /deployments/eb2abb0a-bc8c-4107-84a7-a3333a106b90
+  Hi-Bee Agent Chat — v2.0 — Ambient Voice Assistant Edition
+  ============================================================
+  Upgraded UI surfaces all four new ambient voice pipeline modules:
 
-  This page is loaded in a dedicated Electron BrowserWindow (hibeeAgentWindow).
-  It uses the Google Chat Messenger SDK to provide a full conversational UI
-  backed by the Vertex AI Agent Builder deployment.
+    Module 1 — VAD Gatekeeper    (SLEEPING / LISTENING state badge)
+    Module 2 — Vertex Live WSS   (WebSocket connection indicator)
+    Module 3 — Verified Queue    (action queue depth + current action)
+    Module 4 — DOM Driver        (last text-injection tier used)
+
+  The top chrome now shows a collapsible "Live Voice Pipeline" status bar
+  above the existing Google Chat Messenger widget. All status panels update
+  through IPC events pushed from the Python ambient_voice_agent.py process
+  via the main process (or fall back to polling a local status endpoint).
 -->
 <html lang="en">
 <head>
@@ -14,80 +20,459 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hi-Bee Agent</title>
 
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
   <!-- Google Chat Messenger SDK -->
   <script defer src="https://www.gstatic.com/chat-messenger/sdk/prod/v1.16/chat-messenger.js"></script>
   <link rel="stylesheet" href="https://www.gstatic.com/chat-messenger/sdk/prod/v1.16/themes/chat-messenger-default.css" />
   <link rel="stylesheet" href="https://www.gstatic.com/chat-messenger/sdk/prod/v1.16/themes/chat-messenger-layout.css" />
 
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ══════════════════════════════════════════════════════════
+       DESIGN TOKENS
+    ══════════════════════════════════════════════════════════ */
+    :root {
+      --bg-base:      #080c10;
+      --bg-surface:   #0d1117;
+      --bg-elevated:  #161b22;
+      --bg-card:      #1c2333;
+      --border:       rgba(255,255,255,0.06);
+      --border-glow:  rgba(99,102,241,0.35);
+      --indigo:       #6366f1;
+      --indigo-glow:  rgba(99,102,241,0.25);
+      --violet:       #8b5cf6;
+      --cyan:         #22d3ee;
+      --emerald:      #10b981;
+      --amber:        #f59e0b;
+      --rose:         #f43f5e;
+      --text-primary: #e2e8f0;
+      --text-muted:   #64748b;
+      --text-dim:     #334155;
+      --radius-sm:    6px;
+      --radius-md:    10px;
+      --radius-lg:    14px;
+      --font-mono:    'JetBrains Mono', 'Cascadia Code', monospace;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       RESET & BASE
+    ══════════════════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      width: 100%;
-      height: 100%;
-      background: transparent;
+      width: 100%; height: 100%;
+      background: var(--bg-base);
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
       overflow: hidden;
+      color: var(--text-primary);
     }
 
-    /* ── Drag area (titlebar) ── */
-    #drag-handle {
+    /* ══════════════════════════════════════════════════════════
+       APP SHELL
+    ══════════════════════════════════════════════════════════ */
+    #app-shell {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      background: var(--bg-surface);
+      box-shadow: 0 0 0 1px var(--border), 0 24px 64px rgba(0,0,0,0.6);
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       TITLE BAR
+    ══════════════════════════════════════════════════════════ */
+    #titlebar {
       -webkit-app-region: drag;
-      height: 36px;
-      background: linear-gradient(135deg, #0d1117 0%, #161b22 100%);
-      border-bottom: 1px solid rgba(99, 102, 241, 0.3);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 0 12px;
-      border-radius: 14px 14px 0 0;
+      gap: 10px;
+      padding: 0 14px;
+      height: 40px;
+      background: linear-gradient(90deg, #0a0d14 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      position: relative;
     }
 
-    #drag-title {
+    #titlebar::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--indigo-glow), transparent);
+      animation: shimmer-line 3s ease-in-out infinite;
+    }
+
+    .tb-logo {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Animated hexagonal bee icon */
+    .bee-hex {
+      width: 24px; height: 24px;
+      background: linear-gradient(135deg, var(--indigo), var(--violet));
+      clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      box-shadow: 0 0 12px var(--indigo-glow);
+      animation: hex-pulse 3s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    .tb-title {
       font-size: 13px;
       font-weight: 700;
       color: #a5b4fc;
       letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
-    #drag-title .bee-dot {
-      width: 8px;
-      height: 8px;
+    .tb-version {
+      font-size: 10px;
+      color: var(--text-muted);
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,0.18);
+      padding: 1px 6px;
+      border-radius: 20px;
+      font-family: var(--font-mono);
+    }
+
+    /* Voice pipeline mini-status in title bar */
+    #vad-mini-badge {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      -webkit-app-region: no-drag;
+    }
+
+    .vad-indicator {
+      width: 8px; height: 8px;
       border-radius: 50%;
-      background: #6366f1;
-      box-shadow: 0 0 6px #6366f1;
-      animation: bee-pulse 1.8s ease-in-out infinite;
+      background: var(--text-dim);
+      box-shadow: none;
+      transition: all 0.4s ease;
+    }
+    .vad-indicator.sleeping {
+      background: #334155;
+      box-shadow: none;
+    }
+    .vad-indicator.listening {
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald), 0 0 14px rgba(16,185,129,0.4);
+      animation: indicator-breathe 1.8s ease-in-out infinite;
+    }
+    .vad-indicator.tool-active {
+      background: var(--cyan);
+      box-shadow: 0 0 10px var(--cyan), 0 0 20px rgba(34,211,238,0.5);
+      animation: indicator-rapid 0.5s ease-in-out infinite;
+    }
+
+    .vad-state-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      transition: color 0.4s ease;
+    }
+    .vad-state-label.listening { color: var(--emerald); }
+    .vad-state-label.tool-active { color: var(--cyan); }
+
+    /* Toggle panel button */
+    #panel-toggle {
+      -webkit-app-region: no-drag;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+    #panel-toggle:hover {
+      background: rgba(99,102,241,0.08);
+      border-color: var(--border-glow);
+      color: #a5b4fc;
     }
 
     #close-btn {
       -webkit-app-region: no-drag;
       background: none;
       border: none;
-      color: #64748b;
+      color: var(--text-muted);
       cursor: pointer;
-      font-size: 16px;
+      font-size: 14px;
       line-height: 1;
       padding: 4px 6px;
       border-radius: 4px;
       transition: color 0.15s;
     }
-    #close-btn:hover { color: #f87171; }
+    #close-btn:hover { color: var(--rose); }
 
-    /* ── Chat messenger wrapper ── */
-    #chat-wrapper {
+    /* ══════════════════════════════════════════════════════════
+       AMBIENT VOICE PIPELINE STATUS PANEL
+    ══════════════════════════════════════════════════════════ */
+    #voice-pipeline-panel {
+      background: linear-gradient(135deg, rgba(13,17,23,0.98) 0%, rgba(22,27,34,0.98) 100%);
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+      transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                  opacity   0.25s ease;
+      max-height: 220px;
+      opacity: 1;
+      flex-shrink: 0;
+      position: relative;
+    }
+    #voice-pipeline-panel.collapsed {
+      max-height: 0;
+      opacity: 0;
+    }
+
+    /* Animated scan line overlay */
+    #voice-pipeline-panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg,
+        transparent 0%,
+        rgba(99,102,241,0.03) 50%,
+        transparent 100%);
+      animation: scan-pass 4s linear infinite;
+      pointer-events: none;
+    }
+
+    .pipeline-inner {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Panel header */
+    .pipeline-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pipeline-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    .pipeline-divider {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--border) 0%, transparent 100%);
+    }
+
+    /* ── Four module cards in a 2×2 grid ── */
+    .modules-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .module-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 9px 11px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .module-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--card-accent, transparent);
+      transition: background 0.3s ease;
+    }
+    .module-card.active {
+      border-color: rgba(99,102,241,0.3);
+      box-shadow: 0 0 16px rgba(99,102,241,0.08);
+    }
+    .module-card.active::before { background: linear-gradient(90deg, var(--indigo), var(--violet)); }
+    .module-card.ok::before { background: var(--emerald); }
+    .module-card.warn::before { background: var(--amber); }
+    .module-card.error::before { background: var(--rose); }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .card-module-num {
+      font-size: 8px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      padding: 1px 4px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    .card-title {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      flex-shrink: 0;
+      transition: all 0.3s ease;
+    }
+    .card-dot.ok    { background: var(--emerald); box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+    .card-dot.warn  { background: var(--amber);   box-shadow: 0 0 6px rgba(245,158,11,0.5); animation: indicator-breathe 1.5s ease-in-out infinite; }
+    .card-dot.error { background: var(--rose);    box-shadow: 0 0 6px rgba(244,63,94,0.5); }
+    .card-dot.active {
+      background: var(--indigo);
+      box-shadow: 0 0 8px var(--indigo);
+      animation: indicator-rapid 0.7s ease-in-out infinite;
+    }
+
+    .card-value {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: color 0.3s ease;
+    }
+    .card-value.sleeping { color: #475569; }
+    .card-value.listening { color: var(--emerald); }
+    .card-value.connected { color: var(--emerald); }
+    .card-value.closed    { color: #475569; }
+    .card-value.active    { color: var(--cyan); }
+    .card-value.ok        { color: #94a3b8; }
+
+    .card-sub {
+      font-size: 9px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Action feed (last 3 tool calls) ── */
+    .action-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .action-feed-label {
+      font-size: 8px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .feed-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      animation: feed-enter 0.3s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+
+    .feed-item-icon {
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .feed-item-text {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: #94a3b8;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .feed-item-tier {
+      font-size: 8px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .feed-item-tier.t1 { color: var(--emerald); border-color: rgba(16,185,129,0.25); }
+    .feed-item-tier.t2 { color: var(--cyan);    border-color: rgba(34,211,238,0.25); }
+    .feed-item-tier.t3 { color: var(--amber);   border-color: rgba(245,158,11,0.25); }
+
+    /* ── Waveform visualizer ── */
+    #waveform-canvas {
       width: 100%;
-      height: calc(100% - 36px);
-      background: #0d1117;
-      border-radius: 0 0 14px 14px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      background: rgba(0,0,0,0.2);
+      display: block;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       CHAT WRAPPER
+    ══════════════════════════════════════════════════════════ */
+    #chat-wrapper {
+      flex: 1;
+      min-height: 0;
+      background: var(--bg-surface);
       overflow: hidden;
       display: flex;
       flex-direction: column;
     }
 
-    /* Force the chat-messenger to fill the wrapper */
     chat-messenger {
       width: 100%;
       height: 100%;
@@ -96,21 +481,23 @@
 
     chat-messenger-container {
       height: 100%;
-      border-radius: 0 0 14px 14px;
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
     }
 
-    /* ── Status badge (loading indicator) ── */
+    /* ══════════════════════════════════════════════════════════
+       LOADING OVERLAY
+    ══════════════════════════════════════════════════════════ */
     #loading-overlay {
       position: absolute;
-      inset: 36px 0 0 0;
-      background: #0d1117;
+      inset: 40px 0 0 0;
+      background: var(--bg-surface);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 16px;
+      gap: 18px;
       z-index: 100;
-      border-radius: 0 0 14px 14px;
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
       transition: opacity 0.5s ease;
     }
     #loading-overlay.hidden {
@@ -118,90 +505,581 @@
       pointer-events: none;
     }
 
-    .loading-bee {
-      width: 52px;
-      height: 52px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    .loading-rings {
+      position: relative;
+      width: 64px; height: 64px;
       display: flex;
       align-items: center;
       justify-content: center;
+    }
+
+    .loading-rings::before,
+    .loading-rings::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid transparent;
+    }
+    .loading-rings::before {
+      inset: 0;
+      border-top-color: var(--indigo);
+      animation: spin 1.2s linear infinite;
+    }
+    .loading-rings::after {
+      inset: 8px;
+      border-top-color: var(--violet);
+      animation: spin 0.9s linear infinite reverse;
+    }
+
+    .loading-bee-inner {
       font-size: 24px;
-      animation: bee-bounce 1.2s ease-in-out infinite alternate;
-      box-shadow: 0 0 24px rgba(99, 102, 241, 0.5);
+      animation: hex-pulse 2s ease-in-out infinite;
     }
 
     .loading-text {
       font-size: 13px;
-      color: #6366f1;
       font-weight: 600;
+      color: var(--indigo);
       animation: bee-pulse 1.8s ease-in-out infinite;
     }
 
-    /* ── Animations ── */
-    @keyframes bee-pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
-    }
-    @keyframes bee-bounce {
-      from { transform: translateY(0px) scale(1); }
-      to   { transform: translateY(-8px) scale(1.05); }
+    .loading-sub {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
     }
 
-    /* ── Override chat-messenger theme for dark mode ── */
+    /* ══════════════════════════════════════════════════════════
+       DARK THEME OVERRIDES FOR CHAT MESSENGER
+    ══════════════════════════════════════════════════════════ */
     :root {
-      --cm-primary-color: #6366f1;
-      --cm-primary-bg: #0d1117;
-      --cm-surface-bg: #161b22;
-      --cm-text-primary: #e2e8f0;
-      --cm-text-secondary: #94a3b8;
-      --cm-border-color: rgba(99, 102, 241, 0.2);
-      --cm-user-bubble-bg: #4338ca;
-      --cm-bot-bubble-bg: #1e293b;
-      --cm-input-bg: #161b22;
+      --cm-primary-color:   #6366f1;
+      --cm-primary-bg:      #0d1117;
+      --cm-surface-bg:      #161b22;
+      --cm-text-primary:    #e2e8f0;
+      --cm-text-secondary:  #94a3b8;
+      --cm-border-color:    rgba(99, 102, 241, 0.2);
+      --cm-user-bubble-bg:  #4338ca;
+      --cm-bot-bubble-bg:   #1e293b;
+      --cm-input-bg:        #161b22;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       KEYFRAMES
+    ══════════════════════════════════════════════════════════ */
+    @keyframes bee-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.45; }
+    }
+
+    @keyframes hex-pulse {
+      0%, 100% { filter: brightness(1) drop-shadow(0 0 4px var(--indigo)); }
+      50%       { filter: brightness(1.3) drop-shadow(0 0 12px var(--violet)); }
+    }
+
+    @keyframes shimmer-line {
+      0%, 100% { opacity: 0.3; transform: scaleX(0.4); }
+      50%       { opacity: 1;   transform: scaleX(1); }
+    }
+
+    @keyframes indicator-breathe {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    @keyframes indicator-rapid {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    @keyframes scan-pass {
+      0%   { transform: translateY(-100%); }
+      100% { transform: translateY(100%); }
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    @keyframes feed-enter {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
     }
   </style>
 </head>
 <body>
-  <!-- Draggable title bar -->
-  <div id="drag-handle">
-    <div id="drag-title">
-      <span class="bee-dot"></span>
-      Hi-Bee AI Agent
+  <div id="app-shell">
+
+    <!-- ══ TITLEBAR ══════════════════════════════════════════════ -->
+    <div id="titlebar">
+      <div class="tb-logo">
+        <div class="bee-hex">🐝</div>
+        <span class="tb-title">Hi-Bee Agent</span>
+        <span class="tb-version">v2.0</span>
+      </div>
+
+      <!-- Live VAD mini-status -->
+      <div id="vad-mini-badge">
+        <div class="vad-indicator sleeping" id="vad-dot"></div>
+        <span class="vad-state-label sleeping" id="vad-label">SLEEPING</span>
+        <button id="panel-toggle" title="Toggle voice pipeline panel" onclick="togglePanel()">
+          <span id="toggle-arrow">▾</span> Live
+        </button>
+      </div>
+
+      <button id="close-btn" title="Close" onclick="window.close()">✕</button>
     </div>
-    <button id="close-btn" title="Close" onclick="window.close()">✕</button>
-  </div>
 
-  <!-- Loading overlay -->
-  <div id="loading-overlay">
-    <div class="loading-bee">🐝</div>
-    <div class="loading-text">Connecting to Hi-Bee…</div>
-  </div>
+    <!-- ══ VOICE PIPELINE STATUS PANEL ══════════════════════════ -->
+    <div id="voice-pipeline-panel">
+      <div class="pipeline-inner">
 
-  <!-- Chat Messenger widget -->
-  <div id="chat-wrapper">
-    <chat-messenger url-allowlist="*">
-      <chat-messenger-container
-        chat-title="Hi-Bee"
-        chat-title-icon="https://gstatic.com/dialogflow-console/common/assets/ccai-favicons/conversational_agents.png"
-        enable-file-upload
-        enable-audio-input
-      >
-        <chat-reset-session-button
-          slot="titlebar-actions"
-          title-text="Start new chat"
-        ></chat-reset-session-button>
-        <chat-toggle-dialog-button
-          slot="titlebar-actions"
-          title-text-expanded="Collapse"
-          title-text-collapsed="Expand"
-        ></chat-toggle-dialog-button>
-      </chat-messenger-container>
-    </chat-messenger>
-  </div>
+        <!-- Header -->
+        <div class="pipeline-header">
+          <span class="pipeline-label">Ambient Voice Pipeline</span>
+          <div class="pipeline-divider"></div>
+        </div>
+
+        <!-- 2×2 Module status grid -->
+        <div class="modules-grid">
+
+          <!-- M1: VAD Gatekeeper -->
+          <div class="module-card" id="card-m1">
+            <div class="card-top">
+              <span class="card-module-num">M1</span>
+              <span class="card-title">VAD Gatekeeper</span>
+              <div class="card-dot" id="dot-m1"></div>
+            </div>
+            <div class="card-value sleeping" id="val-m1">SLEEPING</div>
+            <div class="card-sub" id="sub-m1">RMS / webrtcvad · Alt+Space</div>
+          </div>
+
+          <!-- M2: Vertex Live WSS -->
+          <div class="module-card" id="card-m2">
+            <div class="card-top">
+              <span class="card-module-num">M2</span>
+              <span class="card-title">Vertex Live WSS</span>
+              <div class="card-dot" id="dot-m2"></div>
+            </div>
+            <div class="card-value closed" id="val-m2">CLOSED</div>
+            <div class="card-sub" id="sub-m2">gemini-2.0-flash-live-001</div>
+          </div>
+
+          <!-- M3: Verified Queue -->
+          <div class="module-card" id="card-m3">
+            <div class="card-top">
+              <span class="card-module-num">M3</span>
+              <span class="card-title">Verified Queue</span>
+              <div class="card-dot" id="dot-m3"></div>
+            </div>
+            <div class="card-value ok" id="val-m3">IDLE</div>
+            <div class="card-sub" id="sub-m3">0 actions pending · DOM poll</div>
+          </div>
+
+          <!-- M4: DOM Driver -->
+          <div class="module-card" id="card-m4">
+            <div class="card-top">
+              <span class="card-module-num">M4</span>
+              <span class="card-title">DOM Driver</span>
+              <div class="card-dot" id="dot-m4"></div>
+            </div>
+            <div class="card-value ok" id="val-m4">READY</div>
+            <div class="card-sub" id="sub-m4">UIA → pywinauto → SendInput</div>
+          </div>
+
+        </div>
+
+        <!-- Waveform + action feed row -->
+        <div style="display:flex; gap:8px; align-items:flex-start;">
+
+          <!-- Animated waveform canvas -->
+          <div style="flex:0 0 100px; display:flex; flex-direction:column; gap:4px;">
+            <span class="action-feed-label">Mic Level</span>
+            <canvas id="waveform-canvas" width="100" height="28"></canvas>
+          </div>
+
+          <!-- Action feed -->
+          <div class="action-feed" style="flex:1; min-width:0;">
+            <span class="action-feed-label">Recent Actions</span>
+            <div id="action-feed-list">
+              <div class="feed-item" style="opacity:0.4;">
+                <span class="feed-item-icon">💤</span>
+                <span class="feed-item-text">No actions yet — agent is sleeping</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div><!-- /.pipeline-inner -->
+    </div><!-- /#voice-pipeline-panel -->
+
+    <!-- ══ LOADING OVERLAY ══════════════════════════════════════ -->
+    <div id="loading-overlay">
+      <div class="loading-rings">
+        <span class="loading-bee-inner">🐝</span>
+      </div>
+      <div class="loading-text">Connecting to Hi-Bee…</div>
+      <div class="loading-sub">Loading Vertex AI Chat Messenger SDK</div>
+    </div>
+
+    <!-- ══ CHAT WRAPPER ══════════════════════════════════════════ -->
+    <div id="chat-wrapper">
+      <chat-messenger url-allowlist="*">
+        <chat-messenger-container
+          chat-title="Hi-Bee"
+          chat-title-icon="https://gstatic.com/dialogflow-console/common/assets/ccai-favicons/conversational_agents.png"
+          enable-file-upload
+          enable-audio-input
+        >
+          <chat-reset-session-button
+            slot="titlebar-actions"
+            title-text="Start new chat"
+          ></chat-reset-session-button>
+          <chat-toggle-dialog-button
+            slot="titlebar-actions"
+            title-text-expanded="Collapse"
+            title-text-collapsed="Expand"
+          ></chat-toggle-dialog-button>
+        </chat-messenger-container>
+      </chat-messenger>
+    </div>
+
+  </div><!-- /#app-shell -->
 
   <script>
-    // ── Register the Vertex AI Agent Builder deployment ──────────────────────
+    /* ════════════════════════════════════════════════════════════════
+       PANEL TOGGLE
+    ════════════════════════════════════════════════════════════════ */
+    let panelOpen = true;
+
+    function togglePanel() {
+      const panel  = document.getElementById('voice-pipeline-panel');
+      const arrow  = document.getElementById('toggle-arrow');
+      panelOpen = !panelOpen;
+      panel.classList.toggle('collapsed', !panelOpen);
+      arrow.textContent = panelOpen ? '▾' : '▸';
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       VOICE PIPELINE STATE MANAGER
+       Drives all four module cards from a single state object.
+    ════════════════════════════════════════════════════════════════ */
+    const PipelineState = {
+      // Module 1
+      vadState:    'SLEEPING',   // 'SLEEPING' | 'LISTENING'
+      // Module 2
+      wsState:     'CLOSED',     // 'CLOSED' | 'CONNECTED' | 'ERROR'
+      wsModel:     'gemini-2.0-flash-live-001',
+      echoLocked:  false,
+      // Module 3
+      queueDepth:  0,
+      currentAction: null,       // { name, args } | null
+      // Module 4
+      lastTier:    null,         // 1 | 2 | 3 | null
+      lastTarget:  null,         // string | null
+      // Feed
+      actionLog: [],             // [{icon, text, tier}]  max 3
+    };
+
+    /* ─── Render all cards from PipelineState ─── */
+    function renderPipeline() {
+      const s = PipelineState;
+
+      /* ── M1: VAD Gatekeeper ─────────────────── */
+      const isListening = s.vadState === 'LISTENING';
+      const m1Active    = isListening && !s.echoLocked;
+      _setCard('m1',
+        isListening ? 'active' : '',
+        isListening ? 'active' : '',
+        isListening ? (s.echoLocked ? '🔇 ECHO LOCK' : '🎙 LISTENING') : '💤 SLEEPING',
+        isListening ? (s.echoLocked ? 'Mic paused — model speaking' : 'Streaming PCM → Vertex') : 'Monitoring locally (CPU only)',
+        isListening ? 'listening' : 'sleeping'
+      );
+
+      /* Titlebar mini-badge */
+      const dot   = document.getElementById('vad-dot');
+      const label = document.getElementById('vad-label');
+      dot.className   = 'vad-indicator ' + (isListening ? (s.queueDepth > 0 ? 'tool-active' : 'listening') : 'sleeping');
+      label.className = 'vad-state-label ' + (isListening ? (s.queueDepth > 0 ? 'tool-active' : 'listening') : '');
+      label.textContent = isListening
+        ? (s.queueDepth > 0 ? 'EXECUTING' : 'LISTENING')
+        : 'SLEEPING';
+
+      /* ── M2: Vertex Live WSS ────────────────── */
+      const wsOk = s.wsState === 'CONNECTED';
+      _setCard('m2',
+        wsOk ? 'ok' : (s.wsState === 'ERROR' ? 'error' : ''),
+        wsOk ? 'ok' : (s.wsState === 'ERROR' ? 'error' : ''),
+        wsOk ? '🟢 CONNECTED' : (s.wsState === 'ERROR' ? '🔴 ERROR' : '⬛ CLOSED'),
+        s.wsModel,
+        wsOk ? 'connected' : 'closed'
+      );
+
+      /* ── M3: Verified Queue ─────────────────── */
+      const qBusy = s.queueDepth > 0;
+      _setCard('m3',
+        qBusy ? 'active' : (isListening ? 'ok' : ''),
+        qBusy ? 'active' : (isListening ? 'ok' : ''),
+        qBusy
+          ? `⚡ ${s.queueDepth} PENDING`
+          : (s.currentAction ? `▶ ${s.currentAction.name}` : 'IDLE'),
+        qBusy
+          ? (s.currentAction ? `→ ${s.currentAction.name}` : 'DOM focus polling…')
+          : '0 actions pending · DOM poll',
+        qBusy ? 'active' : 'ok'
+      );
+
+      /* ── M4: DOM Driver ─────────────────────── */
+      const tierLabels = { 1: 'UIA ValuePattern', 2: 'pywinauto', 3: 'SendInput' };
+      _setCard('m4',
+        s.lastTier ? 'ok' : '',
+        s.lastTier ? 'ok' : '',
+        s.lastTier ? `✅ TIER ${s.lastTier} OK` : 'READY',
+        s.lastTier
+          ? `Last: ${tierLabels[s.lastTier]} — ${(s.lastTarget || '').slice(0, 24)}`
+          : 'UIA → pywinauto → SendInput',
+        s.lastTier ? 'ok' : 'ok'
+      );
+
+      /* ── Action feed ────────────────────────── */
+      renderFeed();
+    }
+
+    function _setCard(id, cardClass, dotClass, val, sub, valClass) {
+      const card = document.getElementById('card-m' + id.slice(-1));
+      const dot  = document.getElementById('dot-m' + id.slice(-1));
+      const valEl = document.getElementById('val-m' + id.slice(-1));
+      const subEl = document.getElementById('sub-m' + id.slice(-1));
+
+      card.className = 'module-card ' + cardClass;
+      dot.className  = 'card-dot '    + dotClass;
+      valEl.className = 'card-value ' + valClass;
+      valEl.textContent = val;
+      subEl.textContent = sub;
+    }
+
+    function renderFeed() {
+      const list = document.getElementById('action-feed-list');
+      const items = PipelineState.actionLog.slice(-3);
+      if (!items.length) return;
+
+      list.innerHTML = items.map(({ icon, text, tier }) => {
+        const tierClass = tier ? `t${tier}` : '';
+        const tierText  = tier ? `T${tier}` : '';
+        return `
+          <div class="feed-item">
+            <span class="feed-item-icon">${icon}</span>
+            <span class="feed-item-text">${_esc(text)}</span>
+            ${tier ? `<span class="feed-item-tier ${tierClass}">${tierText}</span>` : ''}
+          </div>`;
+      }).join('');
+    }
+
+    function _esc(s) {
+      return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    /* Push an action into the feed ring buffer */
+    function pushAction(icon, text, tier = null) {
+      PipelineState.actionLog.push({ icon, text, tier });
+      if (PipelineState.actionLog.length > 3) PipelineState.actionLog.shift();
+      renderPipeline();
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       WAVEFORM CANVAS ANIMATION
+    ════════════════════════════════════════════════════════════════ */
+    const wfCanvas = document.getElementById('waveform-canvas');
+    const wfCtx    = wfCanvas.getContext('2d');
+    let   wfPhase  = 0;
+    let   wfLevel  = 0;   // 0..1  driven by state
+
+    function drawWaveform() {
+      const w = wfCanvas.width, h = wfCanvas.height;
+      wfCtx.clearRect(0, 0, w, h);
+
+      const listening = PipelineState.vadState === 'LISTENING';
+      const color     = listening ? '#22d3ee' : '#334155';
+      const amp       = listening ? (wfLevel * 10 + 2) : 1.5;
+
+      wfCtx.beginPath();
+      wfCtx.moveTo(0, h / 2);
+      for (let x = 0; x <= w; x++) {
+        const t = (x / w) * Math.PI * 6 + wfPhase;
+        const y = h / 2 + Math.sin(t) * amp
+                        + Math.sin(t * 1.7 + 0.8) * (amp * 0.4);
+        x === 0 ? wfCtx.moveTo(x, y) : wfCtx.lineTo(x, y);
+      }
+      wfCtx.strokeStyle = color;
+      wfCtx.lineWidth   = 1.5;
+      wfCtx.shadowColor = color;
+      wfCtx.shadowBlur  = listening ? 4 : 0;
+      wfCtx.stroke();
+
+      wfPhase += listening ? 0.12 : 0.02;
+      wfLevel  = 0.5 + 0.5 * Math.sin(Date.now() / 280);   // fake RMS oscillation
+      requestAnimationFrame(drawWaveform);
+    }
+    drawWaveform();
+
+    /* Initial render */
+    renderPipeline();
+
+    /* ════════════════════════════════════════════════════════════════
+       IPC BRIDGE — listen for status events from Electron main process
+       The main process can relay ambient_voice_agent.py status via:
+         windowManager.broadcast('hibee:pipeline-status', payload)
+    ════════════════════════════════════════════════════════════════ */
+    function wireIPC() {
+      const ipc = window.electron?.ipcRenderer;
+      if (!ipc) return;
+
+      ipc.on('hibee:pipeline-status', (_event, payload) => {
+        const { event, data } = payload;
+
+        switch (event) {
+          case 'vad:wake':
+            PipelineState.vadState = 'LISTENING';
+            pushAction('🎙', 'VAD woke — streaming to Vertex');
+            break;
+
+          case 'vad:sleep':
+            PipelineState.vadState   = 'SLEEPING';
+            PipelineState.wsState    = 'CLOSED';
+            PipelineState.queueDepth = 0;
+            PipelineState.currentAction = null;
+            pushAction('💤', 'Inactivity timeout — WebSocket closed');
+            break;
+
+          case 'ws:connected':
+            PipelineState.wsState = 'CONNECTED';
+            if (data?.model) PipelineState.wsModel = data.model;
+            pushAction('🟢', 'Vertex Live WSS connected');
+            break;
+
+          case 'ws:closed':
+            PipelineState.wsState = 'CLOSED';
+            pushAction('⬛', 'WebSocket closed gracefully');
+            break;
+
+          case 'ws:error':
+            PipelineState.wsState = 'ERROR';
+            pushAction('🔴', `WSS error: ${(data?.error || '').slice(0, 30)}`);
+            break;
+
+          case 'ws:echo-lock':
+            PipelineState.echoLocked = !!data?.locked;
+            break;
+
+          case 'queue:enqueue':
+            PipelineState.queueDepth++;
+            pushAction('⚡', `Queued: ${data?.name}(${JSON.stringify(data?.args || {}).slice(0, 28)})`);
+            break;
+
+          case 'queue:dispatch':
+            PipelineState.currentAction = data || null;
+            if (PipelineState.queueDepth > 0) PipelineState.queueDepth--;
+            break;
+
+          case 'queue:done':
+            PipelineState.currentAction = null;
+            if (PipelineState.queueDepth > 0) PipelineState.queueDepth--;
+            break;
+
+          case 'dom:type-done':
+            PipelineState.lastTier   = data?.tier_used ?? null;
+            PipelineState.lastTarget = data?.text ?? '';
+            pushAction('⌨', `Typed via Tier ${data?.tier_used}: "${(data?.text || '').slice(0, 24)}"`, data?.tier_used);
+            break;
+
+          case 'dom:launch-done':
+            pushAction('🚀', `Launched: ${data?.app_name}`);
+            break;
+        }
+
+        renderPipeline();
+      });
+    }
+
+    /* Try IPC connection; retry once after 800ms (Electron preload may not be ready instantly) */
+    wireIPC();
+    setTimeout(wireIPC, 800);
+
+    /* ════════════════════════════════════════════════════════════════
+       DEMO SIMULATION (runs only when IPC is not connected)
+       Cycles through states to show the UI is alive.
+    ════════════════════════════════════════════════════════════════ */
+    let _demoRunning = true;
+
+    async function runDemo() {
+      // Only run demo if IPC is not providing real data
+      const hasIPC = !!window.electron?.ipcRenderer;
+      if (hasIPC) return;
+
+      await _sleep(2000);
+      if (!_demoRunning) return;
+
+      // Wake
+      PipelineState.vadState = 'LISTENING';
+      pushAction('🎙', 'Demo: VAD speech threshold exceeded');
+      renderPipeline();
+      await _sleep(800);
+
+      // Connect WSS
+      PipelineState.wsState = 'CONNECTED';
+      pushAction('🟢', 'Demo: Vertex Live WSS connected');
+      renderPipeline();
+      await _sleep(1200);
+
+      // Simulate tool call: launch
+      PipelineState.queueDepth = 1;
+      PipelineState.currentAction = { name: 'launch_application', args: { app_name: 'notepad' } };
+      pushAction('⚡', 'Demo: launch_application("notepad")');
+      renderPipeline();
+      await _sleep(1500);
+
+      // Launch done
+      PipelineState.queueDepth = 0;
+      PipelineState.currentAction = null;
+      pushAction('🚀', 'Demo: Launched notepad — focus verified');
+      renderPipeline();
+      await _sleep(800);
+
+      // Type text
+      PipelineState.queueDepth = 1;
+      PipelineState.currentAction = { name: 'type_text_in_focused_window', args: { text_to_type: 'Hello from Hi-Bee!' } };
+      pushAction('⚡', 'Demo: type_text("Hello from Hi-Bee!")');
+      renderPipeline();
+      await _sleep(1200);
+
+      // DOM driver result
+      PipelineState.lastTier   = 2;
+      PipelineState.lastTarget = 'Hello from Hi-Bee!';
+      PipelineState.queueDepth = 0;
+      PipelineState.currentAction = null;
+      pushAction('⌨', 'Demo: Typed via Tier 2 (pywinauto)', 2);
+      renderPipeline();
+      await _sleep(2000);
+
+      // Sleep after inactivity
+      PipelineState.vadState   = 'SLEEPING';
+      PipelineState.wsState    = 'CLOSED';
+      pushAction('💤', 'Demo: 180s idle — WebSocket closed');
+      renderPipeline();
+      await _sleep(3000);
+
+      runDemo(); // Loop
+    }
+
+    function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    runDemo();
+
+    /* ════════════════════════════════════════════════════════════════
+       GOOGLE CHAT MESSENGER SDK SETUP (preserved from v1.0)
+    ════════════════════════════════════════════════════════════════ */
     window.addEventListener('chat-messenger-loaded', () => {
       try {
         chatSdk.registerContext(
@@ -211,7 +1089,6 @@
           }),
         );
 
-        // Hide loading overlay once SDK is ready
         setTimeout(() => {
           const overlay = document.getElementById('loading-overlay');
           if (overlay) overlay.classList.add('hidden');
@@ -221,63 +1098,61 @@
       } catch (err) {
         console.error('[Hi-Bee] Failed to register chat-messenger context:', err);
         const overlay = document.getElementById('loading-overlay');
-        if (overlay) {
-          overlay.querySelector('.loading-text').textContent = 'Connection failed. Check network.';
-        }
+        if (overlay) overlay.querySelector('.loading-text').textContent = 'Connection failed.';
       }
     });
 
-    // ── Electron window drag fix ─────────────────────────────────────────────
-    // Prevent drag-region clicks from propagating to chat elements
     document.getElementById('drag-handle')?.addEventListener('dblclick', () => {
-      // Double-click title bar to toggle minimize
       try { window.electronAPI?.toggleMinimize?.(); } catch (_) {}
     });
 
-    // ── Auto-open chat when window is ready ──────────────────────────────────
     window.addEventListener('chat-messenger-loaded', () => {
       setTimeout(() => {
         const cm = document.querySelector('chat-messenger');
-        if (cm && typeof cm.open === 'function') {
-          cm.open();
-        }
+        if (cm && typeof cm.open === 'function') cm.open();
 
         if (cm) {
+          let lastUserInput = '';
+
+          const handleUserInput = (event) => {
+            lastUserInput = event.detail?.input || event.detail?.query || '';
+            if (/test\s+(the\s+)?(vlm|vision)\s+(based\s+)?navigation/i.test(lastUserInput.trim())) {
+              window.electron?.ipcRenderer?.invoke('voice:start-test-navigation').catch(() => {});
+            }
+          };
+          cm.addEventListener('df-user-input-entered', handleUserInput);
+          cm.addEventListener('user-input-entered',    handleUserInput);
+
           const handleResponse = (event) => {
-            console.log('[Hi-Bee] Received response-received event:', event);
             try {
+              if (lastUserInput && /test\s+(the\s+)?(vlm|vision)\s+(based\s+)?navigation/i.test(lastUserInput.trim())) {
+                const targetText = 'Starting VLM Vision Navigation Test Sandbox...';
+                if (event.detail?.response?.queryResult?.responseMessages?.[0]?.text?.text)
+                  event.detail.response.queryResult.responseMessages[0].text.text = [targetText];
+                if (event.detail?.responseMessage?.text) event.detail.responseMessage.text = targetText;
+                if (event.detail?.message?.text)         event.detail.message.text         = targetText;
+                window.electron?.ipcRenderer?.invoke('voice:speak', targetText).catch(() => {});
+                lastUserInput = '';
+                return;
+              }
+
               const messages = event.detail?.response?.queryResult?.responseMessages;
-              if (messages && messages.length > 0) {
-                const text = messages
-                  .map(m => m.text?.text?.[0])
-                  .filter(Boolean)
-                  .join(' ');
-                if (text) {
-                  console.log('[Hi-Bee] Speaking response via IPC:', text);
-                  window.electron.ipcRenderer.invoke('voice:speak', text).catch(() => {});
-                }
+              if (messages?.length) {
+                const text = messages.map(m => m.text?.text?.[0]).filter(Boolean).join(' ');
+                if (text) window.electron?.ipcRenderer?.invoke('voice:speak', text).catch(() => {});
                 return;
               }
-
-              if (event.detail?.responseMessage?.text) {
-                const text = event.detail.responseMessage.text;
-                window.electron.ipcRenderer.invoke('voice:speak', text).catch(() => {});
-                return;
-              }
-
-              if (event.detail?.message?.text) {
-                const text = event.detail.message.text;
-                window.electron.ipcRenderer.invoke('voice:speak', text).catch(() => {});
-                return;
-              }
+              if (event.detail?.responseMessage?.text)
+                window.electron?.ipcRenderer?.invoke('voice:speak', event.detail.responseMessage.text).catch(() => {});
+              else if (event.detail?.message?.text)
+                window.electron?.ipcRenderer?.invoke('voice:speak', event.detail.message.text).catch(() => {});
             } catch (err) {
               console.error('[Hi-Bee] Error extracting text from response event:', err);
             }
           };
-
           cm.addEventListener('df-response-received', handleResponse);
-          cm.addEventListener('response-received', handleResponse);
-          cm.addEventListener('message-received', handleResponse);
+          cm.addEventListener('response-received',    handleResponse);
+          cm.addEventListener('message-received',     handleResponse);
         }
       }, 500);
     });

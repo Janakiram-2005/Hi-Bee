@@ -42,6 +42,7 @@ import { stopActiveAgentRun } from './services/stopAgentRun';
 import { windowManager } from './services/windowManager';
 import { checkBrowserAvailability } from './services/browserCheck';
 import { mongoService } from './services/mongoService';
+import { startStatusServer, stopStatusServer } from './services/statusServer';
 
 const { isProd } = env;
 
@@ -137,6 +138,9 @@ const initializeApp = async () => {
 
   // Connect MongoDB (non-blocking — app works even if this fails)
   mongoService.connect().catch((err) => logger.warn('[main] MongoDB connect failed:', err));
+
+  // Start local status server for Python assistant events
+  startStatusServer();
 
   // Helper to register global shortcuts with fallback and error logging
   const registerWithFallback = (primary: string, fallback: string, callback: () => void) => {
@@ -293,6 +297,7 @@ const initializeApp = async () => {
     logger.info('before-quit');
     globalShortcut.unregisterAll();
     mongoService.disconnect().catch(() => {});
+    stopStatusServer();
     const windows = BrowserWindow.getAllWindows();
     windows.forEach((window) => window.destroy());
   });
@@ -437,6 +442,10 @@ const registerIPCHandlers = (
 
   ipcMain.handle('voice:speak', (_event, text) => {
     windowManager.broadcast('voice:speak-text', text);
+  });
+
+  ipcMain.handle('voice:start-test-navigation', () => {
+    windowManager.broadcast('test-navigation:start', {});
   });
 
   registerSettingsHandlers();

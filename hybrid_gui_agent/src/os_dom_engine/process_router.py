@@ -2,9 +2,75 @@ import time
 import subprocess
 import re
 import webbrowser
+import ctypes
 from .win32_api import enumerate_windows, focus_window, get_window_rect
 
-class ProcessRouter:
+class CortanaShortCircuitRouter:
+    @staticmethod
+    def try_deterministic_execution(query: str) -> bool:
+        """
+        Scan raw user command for deterministic intents.
+        - Window Management (close, minimize)
+        - Windows Settings deep-links
+        - Common applications (notepad, calculator)
+        - Web domains
+        """
+        try:
+            q_lower = query.lower().strip()
+            
+            # 1. Web navigation deep-link extractor
+            web_match = re.search(r'\b(?:go\s+to|open\s+website)\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\S*)', q_lower)
+            if web_match:
+                domain = web_match.group(1).strip()
+                if not domain.startswith(('http://', 'https://')):
+                    url = 'https://' + domain
+                else:
+                    url = domain
+                print(f"[CortanaShortCircuitRouter] Web navigation match. Opening browser to: {url}")
+                webbrowser.open(url)
+                return True
+
+            # 2. Window Management (Minimize, Close)
+            if re.search(r'\b(?:close|quit|exit)\b', q_lower):
+                hwnd = ctypes.windll.user32.GetForegroundWindow()
+                if hwnd:
+                    print(f"[CortanaShortCircuitRouter] Window management match: Close. Sending WM_CLOSE to HWND {hwnd}")
+                    ctypes.windll.user32.PostMessageW(hwnd, 0x0010, 0, 0) # WM_CLOSE
+                    return True
+                    
+            if re.search(r'\b(?:minimize|minimise|hide)\b', q_lower):
+                hwnd = ctypes.windll.user32.GetForegroundWindow()
+                if hwnd:
+                    print(f"[CortanaShortCircuitRouter] Window management match: Minimize. Sending SW_MINIMIZE to HWND {hwnd}")
+                    ctypes.windll.user32.ShowWindow(hwnd, 6) # SW_MINIMIZE = 6
+                    return True
+
+            # 3. Internal dictionary of common user intents mapped to Windows Shell commands or URI Deep-links
+            mappings = {
+                "open settings": "start ms-settings:",
+                "launch settings": "start ms-settings:",
+                "wifi settings": "start ms-settings:network-wifi",
+                "network settings": "start ms-settings:network-wifi",
+                "windows update": "start ms-settings:windowsupdate",
+                "open calculator": "calc",
+                "launch calculator": "calc",
+                "open notepad": "notepad"
+            }
+
+            for key, cmd in mappings.items():
+                pattern = rf"\b{re.escape(key)}\b"
+                if re.search(pattern, q_lower):
+                    print(f"[CortanaShortCircuitRouter] Intent match for '{key}' -> command: '{cmd}'. Executing via system shell...")
+                    subprocess.Popen(cmd, shell=True)
+                    return True
+
+        except Exception as e:
+            print(f"[CortanaShortCircuitRouter] Exception during deterministic check: {e}")
+            
+        return False
+
+
+class ProcessRouter(CortanaShortCircuitRouter):
     @staticmethod
     def find_and_focus_app(query: str) -> int:
         """
@@ -76,49 +142,3 @@ class ProcessRouter:
                 if rect and rect[2] > 50 and rect[3] > 50:
                     return hwnd
         return None
-
-    @staticmethod
-    def try_deterministic_execution(query: str) -> bool:
-        """
-        Scan raw user command for deterministic intents.
-        - Windows Settings deep-links
-        - Common applications (notepad, calculator)
-        - Web domains
-        """
-        try:
-            q_lower = query.lower().strip()
-            
-            # 1. Web navigation deep-link extractor
-            web_match = re.search(r'(?:go\s+to|open\s+website)\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\S*)', q_lower)
-            if web_match:
-                url = web_match.group(1).strip()
-                if not url.startswith(('http://', 'https://')):
-                    url = 'https://' + url
-                print(f"[ProcessRouter] Web navigation match. Opening browser to: {url}")
-                webbrowser.open(url)
-                return True
-
-            # 2. Check settings and tool shortcuts mapping
-            settings_mappings = {
-                "open settings": "ms-settings:",
-                "launch settings": "ms-settings:",
-                "wifi": "ms-settings:network-wifi",
-                "network settings": "ms-settings:network-wifi",
-                "windows update": "ms-settings:windowsupdate",
-                "update settings": "ms-settings:windowsupdate",
-                "open calculator": "calc.exe",
-                "launch calculator": "calc.exe",
-                "open notepad": "notepad.exe"
-            }
-            
-            for keyword, target in settings_mappings.items():
-                if keyword in q_lower:
-                    print(f"[ProcessRouter] Intent match for '{keyword}' -> target: '{target}'. Executing...")
-                    import os
-                    os.startfile(target)
-                    return True
-                    
-        except Exception as e:
-            print(f"[ProcessRouter] Exception during deterministic check: {e}")
-            
-        return False

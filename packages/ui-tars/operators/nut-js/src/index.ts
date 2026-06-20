@@ -31,8 +31,48 @@ const moveStraightTo = async (startX: number | null, startY: number | null) => {
   if (startX === null || startY === null) {
     return;
   }
-  // Teleport cursor instantly to exact rounded integer coordinates to eliminate animation drift
-  await mouse.setPosition(new Point(Math.round(startX), Math.round(startY)));
+  const { logger } = useContext();
+  const targetX = Math.round(startX);
+  const targetY = Math.round(startY);
+  
+  // Set position directly
+  await mouse.setPosition(new Point(targetX, targetY));
+  await sleep(50);
+  
+  const currentPos = await mouse.getPosition();
+  const dx = Math.abs(currentPos.x - targetX);
+  const dy = Math.abs(currentPos.y - targetY);
+  
+  if (dx > 2 || dy > 2) {
+    logger?.warn(`[CursorVerify] Cursor drift detected. Expected (${targetX}, ${targetY}), actual (${currentPos.x}, ${currentPos.y}). Calibrating coordinate mapping...`);
+    
+    // Perform dynamic calibration: move mouse to a known reference point (100, 100)
+    await mouse.setPosition(new Point(100, 100));
+    await sleep(50);
+    const refPos = await mouse.getPosition();
+    
+    // Calculate scaling ratio
+    const scaleRatioX = refPos.x > 0 ? refPos.x / 100 : 1;
+    const scaleRatioY = refPos.y > 0 ? refPos.y / 100 : 1;
+    logger?.info(`[CursorVerify] Calibrated Scale Ratios: X=${scaleRatioX}, Y=${scaleRatioY}`);
+    
+    // Calibrate the target coordinates using the ratio
+    const calibratedX = Math.round(targetX / scaleRatioX);
+    const calibratedY = Math.round(targetY / scaleRatioY);
+    
+    // Move to calibrated coordinates
+    await mouse.setPosition(new Point(calibratedX, calibratedY));
+    await sleep(50);
+    
+    // Double check
+    const finalPos = await mouse.getPosition();
+    const finalDx = Math.abs(finalPos.x - targetX);
+    const finalDy = Math.abs(finalPos.y - targetY);
+    if (finalDx > 2 || finalDy > 2) {
+      logger?.warn(`[CursorVerify] Calibration fallback: setting cursor directly one last time to (${targetX}, ${targetY})`);
+      await mouse.setPosition(new Point(targetX, targetY));
+    }
+  }
 };
 export class NutJSOperator extends Operator {
   static MANUAL = {

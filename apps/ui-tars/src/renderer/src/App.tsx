@@ -17,6 +17,7 @@ const FreeRemoteOperator = lazy(() => import('./pages/remote/free'));
 
 const Widget = lazy(() => import('./pages/widget'));
 const VoiceAvatarPage = lazy(() => import('./pages/voice-avatar'));
+const TestNavigation = lazy(() => import('./pages/test-navigation'));
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/local" element={<LocalOperator />} />
             <Route path="/free-remote" element={<FreeRemoteOperator />} />
             {/* <Route path="/paid-remote" element={<PaidRemoteOperator />} /> */}
+            <Route path="/test-navigation" element={<TestNavigation />} />
           </Route>
 
           <Route path="/widget" element={<Widget />} />

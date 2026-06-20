@@ -12,11 +12,11 @@ import { logger } from '@main/logger';
 import { mongoService } from '@main/services/mongoService';
 import { vertexChat, VoiceChatHistory } from '@main/services/vertexAIService';
 import { transcribeAudio } from '@main/services/cloudSTT';
-import { synthesizeSpeech } from '@main/services/cloudTTS';
+import { TTSFactory } from '@main/services/tts/TTSFactory';
 import { windowManager } from '@main/services/windowManager';
 import { Operator } from '@main/store/types';
 import { isStopVoiceCommand, stopActiveAgentRun } from '@main/services/stopAgentRun';
-import { toggleHiBeeAgentWindow } from '@main/window/hibeeAgentWindow';
+import { toggleHiBeeAgentWindow, getHiBeeAgentWindow } from '@main/window/hibeeAgentWindow';
 import { SettingStore } from '@main/store/setting';
 
 const t = initIpc.create();
@@ -35,9 +35,15 @@ export const voiceRoute = t.router({
 
   // ── Cloud Text-to-Speech synthesis ──────────────────────────────────
   synthesizeSpeech: t.procedure
-    .input<{ text: string; languageCode: string; ssml?: boolean }>()
+    .input<{ text: string; languageCode: string; ssml?: boolean; voiceId?: string; speed?: number }>()
     .handle(async ({ input }) => {
-      const result = await synthesizeSpeech(input.text, input.languageCode, input.ssml ?? false);
+      // Pass the voice_id and speed parameters down to TTSFactory
+      const result = await TTSFactory.synthesizeSpeech({
+        text: input.text,
+        languageCode: input.languageCode,
+        voiceId: input.voiceId,
+        speed: input.speed,
+      });
       return result;
     }),
 
@@ -94,9 +100,10 @@ export const voiceRoute = t.router({
       history: VoiceChatHistory[];
       language: string;
       taskId?: string | null;
+      runInBackground?: boolean;
     }>()
     .handle(async ({ input }) => {
-      const { transcript, history, language, taskId } = input;
+      const { transcript, history, language, taskId, runInBackground } = input;
 
       logger.info(`[voiceRoute] voiceChat — lang:${language}, transcript: "${transcript.slice(0, 80)}"`);
 
@@ -154,7 +161,7 @@ export const voiceRoute = t.router({
           });
 
           runAgent(store.setState, store.getState, Operator.LocalComputer, {
-            background: true,
+            background: runInBackground ?? false,
           })
             .then(() => {
               store.setState({ thinking: false });
@@ -269,9 +276,10 @@ export const voiceRoute = t.router({
       try {
         const prompt = [
           'You are a computer co-pilot gatekeeper.',
-          'Analyze if the following user speech transcript is a direct request, command, or task to perform an action on their computer (e.g. opening an app, typing, searching, navigating, clicking, etc.).',
-          'If it is a clear computer action request, output ONLY a JSON object: {"actionable": true, "task": "short summary of the task in a few words"}',
-          'If it is casual conversation, background talking, or not an action request, output ONLY a JSON object: {"actionable": false}',
+          'Analyze the following user speech transcript.',
+          '1. If it is a direct request to perform an action on their computer (e.g. opening an app, clicking, searching), output ONLY a JSON object: {"actionable": true, "task": "short summary of the task in ENGLISH", "is_conversation": false}',
+          '2. If it is a casual conversation, greeting, or question clearly directed at you (e.g. "Hello", "How are you", "What is your name"), output ONLY a JSON object: {"actionable": false, "is_conversation": true}',
+          '3. If it is just random background noise, incomplete sentences, or people talking to each other, output ONLY a JSON object: {"actionable": false, "is_conversation": false}',
           'Do not include any markdown styling or extra text. Output strict JSON.',
           '',
           `Transcript: "${input.transcript}"`
@@ -282,12 +290,13 @@ export const voiceRoute = t.router({
         logger.info(`[checkLiveAgentIntent] Raw response: "${raw}"`);
 
         const jsonMatch = raw.match(/\{.*\}/s);
-        if (!jsonMatch) return { actionable: false };
+        if (!jsonMatch) return { actionable: false, is_conversation: false };
 
         const parsed = JSON.parse(jsonMatch[0]);
         return {
           actionable: !!parsed.actionable,
           task: parsed.task || null,
+          is_conversation: !!parsed.is_conversation,
         };
       } catch (err) {
         logger.warn('[voiceRoute] checkLiveAgentIntent failed:', err);
@@ -359,6 +368,29 @@ export const voiceRoute = t.router({
         return { ok: true };
       } catch (err) {
         logger.error('[voiceRoute] registerHotkey failed:', err);
+        return { ok: false };
+      }
+    }),
+  // ─── Push ambient voice pipeline status to Hi-Bee window ─────────────────
+  sendPipelineStatus: t.procedure
+    .input<{ event: string; data?: Record<string, unknown> }>()
+    .handle(async ({ input }) => {
+      try {
+        const hibeeWin = getHiBeeAgentWindow();
+        if (hibeeWin && !hibeeWin.isDestroyed()) {
+          hibeeWin.webContents.send('hibee:pipeline-status', {
+            event: input.event,
+            data: input.data ?? {},
+          });
+        }
+        // Also broadcast to all other registered windows (e.g. main renderer)
+        windowManager.broadcast('hibee:pipeline-status', {
+          event: input.event,
+          data: input.data ?? {},
+        });
+        return { ok: true };
+      } catch (err) {
+        logger.warn('[voiceRoute] sendPipelineStatus failed:', err);
         return { ok: false };
       }
     }),

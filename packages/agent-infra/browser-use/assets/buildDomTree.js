@@ -378,9 +378,9 @@ window.buildDomTree = (
     const style = getCachedComputedStyle(element);
 
     // Check if element has click-like styling
-    // const hasClickStyling = style.cursor === 'pointer' ||
-    //     element.style.cursor === 'pointer' ||
-    //     style.pointerEvents !== 'none';
+    const hasClickStyling = style.cursor === 'pointer' ||
+        element.style.cursor === 'pointer' ||
+        style.pointerEvents !== 'none';
 
     // Check for event listeners
     const hasClickHandler =
@@ -467,10 +467,10 @@ window.buildDomTree = (
 
     return (
       hasAriaProps ||
-      // hasClickStyling ||
+      hasClickStyling ||
       hasClickHandler ||
       hasClickListeners ||
-      // isFormRelated ||
+      isFormRelated ||
       isDraggable
     );
   }

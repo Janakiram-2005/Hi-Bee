@@ -219,13 +219,13 @@
 .state-speaking .voice-bar:nth-child(4) { animation: bar-wave 0.5s ease-in-out infinite 0.15s; }
 .state-speaking .voice-bar:nth-child(5) { animation: bar-wave 0.5s ease-in-out infinite 0.05s; }
 
+/* ── Resizable Wrapper ──────────────────────────────────────────────────── */
+.voice-resizable-wrapper {
+  /* removed height: auto !important to re-enable vertical resizing */
+}
+
 /* ── Expanded Panel ─────────────────────────────────────────────────────── */
 .voice-panel {
-  position: absolute;
-  bottom: 84px;
-  right: 0;
-  width: 340px;
-  max-height: 520px;
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(20px) saturate(190%);
   -webkit-backdrop-filter: blur(20px) saturate(190%);
@@ -254,6 +254,12 @@
   border-bottom: 1px solid #e2e8f0;
   background: rgba(255, 255, 255, 0.95);
   flex-shrink: 0;
+}
+
+.voice-panel-title {
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
 }
 
 .voice-panel-header .voice-ctrl-btn {
@@ -290,11 +296,14 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 2px 8px;
+  padding: 4px 10px;
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.voice-state-badge.idle     { background: rgba(100, 116, 139, 0.1); color: #475569; }
+.voice-state-badge.idle     { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
 .voice-state-badge.listening { background: rgba(14, 165, 233, 0.1); color: #0284c7; border: 1px solid rgba(14, 165, 233, 0.25); }
 .voice-state-badge.thinking  { background: rgba(168, 85, 247, 0.1); color: #7c3aed; border: 1px solid rgba(168, 85, 247, 0.25); }
 .voice-state-badge.speaking  { background: rgba(34, 197, 94, 0.1); color: #16a34a; border: 1px solid rgba(34, 197, 94, 0.25); }
@@ -380,20 +389,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 12px;
   border-top: 1px solid #e2e8f0;
-  background: rgba(255, 255, 255, 0.95);
+  background: #ffffff;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.03);
   flex-shrink: 0;
 }
 
 .voice-text-input-field {
   flex: 1;
-  height: 34px;
+  height: 38px;
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   color: #0f172a;
-  font-size: 12px;
+  font-size: 13px;
   padding: 0 12px;
   outline: none;
   font-family: 'Inter', system-ui, sans-serif;

@@ -97,6 +97,12 @@ interface VoiceStore {
   volume: number;
   isPaused: boolean;
   textInput: string;
+  runInBackground: boolean;
+
+  // ── ElevenLabs TTS Settings
+  hibeeSelectedVoice: string;
+  hibeeVoiceSpeed: number;
+  hibeeAutoSpeak: boolean;
 
   // ── Agent Status (shared with Hi-Bee Live View)
   agentAction: string | null;      // raw action string e.g. "click(x=450, y=320)"
@@ -127,6 +133,11 @@ interface VoiceStore {
   setVolume: (v: number) => void;
   setIsPaused: (p: boolean) => void;
   setTextInput: (text: string) => void;
+  setRunInBackground: (v: boolean) => void;
+
+  setHibeeSelectedVoice: (id: string) => void;
+  setHibeeVoiceSpeed: (speed: number) => void;
+  setHibeeAutoSpeak: (auto: boolean) => void;
 }
 
 export const useVoiceStore = create<VoiceStore>((set) => ({
@@ -147,6 +158,12 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
   volume: 1.0,
   isPaused: false,
   textInput: '',
+  runInBackground: false,
+
+  // Read defaults from localStorage if available
+  hibeeSelectedVoice: typeof localStorage !== 'undefined' ? localStorage.getItem('hibee_selected_voice') || 'Ek86tj0PS0XTYchY9Ody' : 'Ek86tj0PS0XTYchY9Ody',
+  hibeeVoiceSpeed: typeof localStorage !== 'undefined' ? parseFloat(localStorage.getItem('hibee_voice_speed') || '1.0') : 1.0,
+  hibeeAutoSpeak: typeof localStorage !== 'undefined' ? localStorage.getItem('hibee_auto_speak') !== 'false' : true,
 
   // Agent status defaults
   agentAction: null,
@@ -181,4 +198,18 @@ export const useVoiceStore = create<VoiceStore>((set) => ({
   setVolume: (v) => set({ volume: v }),
   setIsPaused: (p) => set({ isPaused: p }),
   setTextInput: (text) => set({ textInput: text }),
+  setRunInBackground: (v) => set({ runInBackground: v }),
+
+  setHibeeSelectedVoice: (id) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('hibee_selected_voice', id);
+    set({ hibeeSelectedVoice: id });
+  },
+  setHibeeVoiceSpeed: (speed) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('hibee_voice_speed', speed.toString());
+    set({ hibeeVoiceSpeed: speed });
+  },
+  setHibeeAutoSpeak: (auto) => {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('hibee_auto_speak', auto.toString());
+    set({ hibeeAutoSpeak: auto });
+  },
 }));

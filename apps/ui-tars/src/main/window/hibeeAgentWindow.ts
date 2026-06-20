@@ -13,6 +13,7 @@
 import path from 'node:path';
 import { app, BrowserWindow, screen } from 'electron';
 import { logger } from '@main/logger';
+import { windowManager } from '@main/services/windowManager';
 
 let agentWindow: BrowserWindow | null = null;
 
@@ -80,6 +81,8 @@ export function createHiBeeAgentWindow(): BrowserWindow {
   agentWindow.once('ready-to-show', () => {
     agentWindow?.show();
     agentWindow?.focus();
+    // Register with windowManager so broadcast() reaches this window
+    if (agentWindow) windowManager.registerWindow(agentWindow);
     logger.info('[hibeeAgentWindow] Hi-Bee Agent chat window shown');
   });
 

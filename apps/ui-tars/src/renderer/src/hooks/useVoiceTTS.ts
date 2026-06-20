@@ -56,6 +56,9 @@ export function useVoiceTTS() {
     volume,
     setIsPaused,
     voiceWakeupMode,
+    hibeeSelectedVoice,
+    hibeeVoiceSpeed,
+    hibeeAutoSpeak,
   } = useVoiceStore();
 
   const { settings } = useSetting();
@@ -167,21 +170,30 @@ export function useVoiceTTS() {
         (window as any)._activeUtterances = [];
       }
 
+      // If Auto Speak is off, just exit early without playing TTS
+      if (!useVoiceStore.getState().hibeeAutoSpeak) {
+        setAvatarState(nextState);
+        return;
+      }
+
       // Detect target language: prefer selectedLanguage, then Unicode fallback
       const targetLang = detectLanguage(text, selectedLanguageRef.current);
 
-      // Determine backend: use GCP for Indian regional languages, also check setting
-      const voiceTtsBackend = settingsRef.current?.voiceTtsBackend ?? 'gcp';
-      const isIndianRegional = /^(te|hi|ta|kn|ml|bn|mr|gu|pa)-IN/.test(targetLang);
-      const useGcp = voiceTtsBackend === 'gcp' || isIndianRegional;
+      // Always try the primary Cloud TTS backend (ElevenLabs or Google) first
+      const useCloudTts = true;
 
-      if (useGcp) {
+      if (useCloudTts) {
         setAvatarState('speaking');
         isSpeakingRef.current = true;
 
         try {
-          api.logFromRenderer({ message: `[useVoiceTTS] GCP TTS: lang=${targetLang}, text="${text.slice(0, 40)}"` }).catch(() => {});
-          const result = await api.synthesizeSpeech({ text, languageCode: targetLang });
+          api.logFromRenderer({ message: `[useVoiceTTS] Primary TTS: lang=${targetLang}, text="${text.slice(0, 40)}"` }).catch(() => {});
+          const result = await api.synthesizeSpeech({ 
+            text, 
+            languageCode: targetLang,
+            voiceId: useVoiceStore.getState().hibeeSelectedVoice,
+            speed: useVoiceStore.getState().hibeeVoiceSpeed
+          });
 
           if (result?.audioContent) {
             if (!isSpeakingRef.current) {
@@ -191,6 +203,8 @@ export function useVoiceTTS() {
 
             const audio = new Audio(`data:audio/mp3;base64,${result.audioContent}`);
             audio.volume = useVoiceStore.getState().volume;
+            // Apply speed setting
+            audio.playbackRate = useVoiceStore.getState().hibeeVoiceSpeed;
             currentAudioRef.current = audio;
 
             audio.onended = () => {
@@ -201,7 +215,7 @@ export function useVoiceTTS() {
             };
 
             audio.onerror = (e) => {
-              console.error('[useVoiceTTS] GCP Audio element error:', e);
+              console.error('[useVoiceTTS] Cloud Audio element error:', e);
               isSpeakingRef.current = false;
               currentAudioRef.current = null;
               setIsPaused(false);
@@ -210,13 +224,13 @@ export function useVoiceTTS() {
 
             await audio.play();
           } else {
-            api.logFromRenderer({ message: '[useVoiceTTS] GCP TTS empty response, falling back to browser' }).catch(() => {});
+            api.logFromRenderer({ message: '[useVoiceTTS] Primary TTS empty response, falling back to browser' }).catch(() => {});
             isSpeakingRef.current = false;
             // Fallback to browser synthesis
             await speakBrowser(text, targetLang, nextState);
           }
         } catch (err) {
-          console.warn('[useVoiceTTS] GCP TTS error, falling back to browser:', err);
+          console.warn('[useVoiceTTS] Primary TTS error, falling back to browser:', err);
           isSpeakingRef.current = false;
           await speakBrowser(text, targetLang, nextState);
         }
@@ -236,7 +250,7 @@ export function useVoiceTTS() {
         const utterances = chunks.map((chunk, idx) => {
           const u = new SpeechSynthesisUtterance(chunk);
           u.lang = lang;
-          u.rate = 1.1;
+          u.rate = 1.1 * useVoiceStore.getState().hibeeVoiceSpeed;
           u.pitch = 1.02;
           u.volume = useVoiceStore.getState().volume;
           if (voice) u.voice = voice;

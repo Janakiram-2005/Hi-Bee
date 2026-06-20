@@ -45,7 +45,18 @@ export function VoiceSettings() {
     availableVoices,
     voiceWakeupMode, setWakeupMode,
     setWakePhrase,
+    hibeeSelectedVoice, setHibeeSelectedVoice,
+    hibeeVoiceSpeed, setHibeeVoiceSpeed,
+    hibeeAutoSpeak, setHibeeAutoSpeak,
   } = useVoiceStore();
+
+  const ELEVENLABS_VOICES = [
+    { name: "Keshavi", description: "Friendly Female", voice_id: "Ek86tj0PS0XTYchY9Ody" },
+    { name: "Anika", description: "Professional Female", voice_id: "jUjRbhZWoMK4aDciW36V" },
+    { name: "Viraj", description: "Energetic Male", voice_id: "iWNf11sz1GrUE4ppxTOL" },
+    { name: "Amit Gupta", description: "Professional Male", voice_id: "WuePGPKIAIKI8COZpzce" },
+    { name: "Muskaan", description: "Calm Female", voice_id: "xoV6iGVuOGYHLWjXhVC7" }
+  ];
 
   const [silenceMs, setSilenceMs] = useState(1500);
   const [autoStart, setAutoStart] = useState(false);
@@ -81,23 +92,7 @@ export function VoiceSettings() {
 
   const handleLanguageChange = (val: string) => {
     setLanguage(val);
-    setVoice(''); // reset accent
-    const isTe = val === 'te-IN';
-    setUseTeluguVoice(isTe);
-    save({ voiceLanguage: val, voiceAccent: '', voiceAccentUri: '', useTeluguVoice: isTe });
-  };
-
-  const handleTeluguVoiceToggle = (val: boolean) => {
-    setUseTeluguVoice(val);
-    if (val) {
-      setLanguage('te-IN');
-      setVoice('');
-      save({ useTeluguVoice: true, voiceLanguage: 'te-IN', voiceAccent: '', voiceAccentUri: '' });
-    } else {
-      setLanguage('en-US');
-      setVoice('');
-      save({ useTeluguVoice: false, voiceLanguage: 'en-US', voiceAccent: '', voiceAccentUri: '' });
-    }
+    save({ voiceLanguage: val });
   };
 
   const handleVoiceChange = (uri: string) => {
@@ -152,19 +147,6 @@ export function VoiceSettings() {
         </p>
       </div>
 
-      {/* Telugu Language Toggle */}
-      <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border bg-muted/20">
-        <div className="flex gap-3">
-          <Globe className="h-5 w-5 text-violet-500 mt-0.5" />
-          <div>
-            <Label className="text-sm font-medium">Primary Telugu Voice (te-IN)</Label>
-            <p className="text-xs text-muted-foreground mt-1">
-              Enable Telugu as the primary recognition and high-fidelity text-to-speech voice.
-            </p>
-          </div>
-        </div>
-        <Switch checked={useTeluguVoice} onCheckedChange={handleTeluguVoiceToggle} />
-      </div>
 
       {/* Language */}
       <div className="space-y-2">
@@ -187,31 +169,63 @@ export function VoiceSettings() {
         </p>
       </div>
 
-      {/* Accent / Voice */}
-      {langVoices.length > 0 && (
+      {/* ── Primary Voice Settings ── */}
+      <div className="space-y-4 pt-4 border-t border-border">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Volume2 className="h-4 w-4 text-violet-500" />
+          Primary Voice Settings
+        </h3>
+
+        {/* Voice Selection */}
         <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Volume2 className="h-4 w-4 text-muted-foreground" />
-            <Label className="text-sm font-medium">Voice & Accent</Label>
-          </div>
-          <Select value={selectedVoiceURI || '__default__'} onValueChange={(v) => handleVoiceChange(v === '__default__' ? '' : v)}>
+          <Label className="text-sm font-medium">Primary Voice</Label>
+          <Select value={hibeeSelectedVoice} onValueChange={setHibeeSelectedVoice}>
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Default system voice" />
+              <SelectValue placeholder="Select a voice" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__default__">System Default</SelectItem>
-              {langVoices.map((v) => (
-                <SelectItem key={v.voiceURI} value={v.voiceURI}>
-                  {v.name} {v.localService ? '(Local)' : '(Online)'}
+              {ELEVENLABS_VOICES.map((v) => (
+                <SelectItem key={v.voice_id} value={v.voice_id}>
+                  {v.name} ({v.description})
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Available voices depend on your OS and installed language packs.
+            High-fidelity multilingual AI voices powered by ElevenLabs.
           </p>
         </div>
-      )}
+
+        {/* Voice Speed */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Voice Speed</Label>
+          <Select value={hibeeVoiceSpeed.toString()} onValueChange={(val) => setHibeeVoiceSpeed(parseFloat(val))}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select speed" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0.75">0.75x (Slow)</SelectItem>
+              <SelectItem value="1">1.0x (Normal)</SelectItem>
+              <SelectItem value="1.25">1.25x (Fast)</SelectItem>
+              <SelectItem value="1.5">1.5x (Very Fast)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Auto Speak Toggle */}
+        <div className="flex items-start justify-between gap-4 p-4 rounded-lg border border-border bg-muted/20">
+          <div className="flex gap-3">
+            <Volume2 className="h-5 w-5 text-violet-500 mt-0.5" />
+            <div>
+              <Label className="text-sm font-medium">Auto Speak Responses</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Automatically play the audio response when Hi-Bee replies.
+              </p>
+            </div>
+          </div>
+          <Switch checked={hibeeAutoSpeak} onCheckedChange={setHibeeAutoSpeak} />
+        </div>
+      </div>
 
       {/* Silence threshold */}
       <div className="space-y-3">
@@ -283,7 +297,7 @@ export function VoiceSettings() {
       <div className="p-3 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
         <p className="text-xs text-violet-700 dark:text-violet-300">
           <strong>STT:</strong> Google Cloud Speech-to-Text v1 (60 min/month free) ·{' '}
-          <strong>TTS:</strong> Browser-native Web Speech API (GCP Neural2 voices available with billing) ·{' '}
+          <strong>TTS:</strong> ElevenLabs Multilingual v2 (Default) ·{' '}
           <strong>AI:</strong> Gemini Vertex (<code>convertionalai</code>).<br/>
           Voice history is saved to MongoDB Atlas for context.
         </p>

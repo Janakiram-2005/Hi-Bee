@@ -5,8 +5,8 @@
  * VoicePanel — Glassmorphism expanded panel with conversation history,
  * live transcript, language/voice selector, and Task KB viewer.
  */
-import { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause, RotateCcw } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { useVoiceStore } from '@renderer/store/voiceStore';
 import { RobotAvatar } from './RobotAvatar';
 import { api } from '@renderer/api';
@@ -16,34 +16,34 @@ import { StatusEnum } from '@ui-tars/shared/types';
 
 // Language options with display names
 const LANGUAGES = [
-  { code: 'en-US', label: '🇺🇸 English (US)' },
-  { code: 'en-GB', label: '🇬🇧 English (UK)' },
-  { code: 'en-AU', label: '🇦🇺 English (AU)' },
-  { code: 'en-IN', label: '🇮🇳 English (IN)' },
+  { code: 'en-US', label: 'English (US)' },
+  { code: 'en-GB', label: 'English (UK)' },
+  { code: 'en-AU', label: 'English (AU)' },
+  { code: 'en-IN', label: 'English (IN)' },
   // ── Indian Regional Languages ──
-  { code: 'hi-IN', label: '🇮🇳 Hindi (हिंदी)' },
-  { code: 'te-IN', label: '🇮🇳 Telugu (తెలుగు)' },
-  { code: 'ta-IN', label: '🇮🇳 Tamil (தமிழ்)' },
-  { code: 'kn-IN', label: '🇮🇳 Kannada (ಕನ್ನಡ)' },
-  { code: 'ml-IN', label: '🇮🇳 Malayalam (മലയാളം)' },
-  { code: 'bn-IN', label: '🇮🇳 Bengali (বাংলা)' },
-  { code: 'mr-IN', label: '🇮🇳 Marathi (मराठी)' },
-  { code: 'gu-IN', label: '🇮🇳 Gujarati (ગુજરાતી)' },
-  { code: 'pa-IN', label: '🇮🇳 Punjabi (ਪੰਜਾਬੀ)' },
+  { code: 'hi-IN', label: 'Hindi' },
+  { code: 'te-IN', label: 'Telugu' },
+  { code: 'ta-IN', label: 'Tamil' },
+  { code: 'kn-IN', label: 'Kannada' },
+  { code: 'ml-IN', label: 'Malayalam' },
+  { code: 'bn-IN', label: 'Bengali' },
+  { code: 'mr-IN', label: 'Marathi' },
+  { code: 'gu-IN', label: 'Gujarati' },
+  { code: 'pa-IN', label: 'Punjabi' },
   // ── Global Languages ──
-  { code: 'zh-CN', label: '🇨🇳 Chinese (Simplified)' },
-  { code: 'zh-TW', label: '🇹🇼 Chinese (Traditional)' },
-  { code: 'ja-JP', label: '🇯🇵 Japanese' },
-  { code: 'ko-KR', label: '🇰🇷 Korean' },
-  { code: 'es-ES', label: '🇪🇸 Spanish (ES)' },
-  { code: 'es-MX', label: '🇲🇽 Spanish (MX)' },
-  { code: 'fr-FR', label: '🇫🇷 French' },
-  { code: 'de-DE', label: '🇩🇪 German' },
-  { code: 'pt-BR', label: '🇧🇷 Portuguese (BR)' },
-  { code: 'ar-SA', label: '🇸🇦 Arabic' },
-  { code: 'ru-RU', label: '🇷🇺 Russian' },
-  { code: 'tr-TR', label: '🇹🇷 Turkish' },
-  { code: 'it-IT', label: '🇮🇹 Italian' },
+  { code: 'zh-CN', label: 'Chinese (Simplified)' },
+  { code: 'zh-TW', label: 'Chinese (Traditional)' },
+  { code: 'ja-JP', label: 'Japanese' },
+  { code: 'ko-KR', label: 'Korean' },
+  { code: 'es-ES', label: 'Spanish (ES)' },
+  { code: 'es-MX', label: 'Spanish (MX)' },
+  { code: 'fr-FR', label: 'French' },
+  { code: 'de-DE', label: 'German' },
+  { code: 'pt-BR', label: 'Portuguese (BR)' },
+  { code: 'ar-SA', label: 'Arabic' },
+  { code: 'ru-RU', label: 'Russian' },
+  { code: 'tr-TR', label: 'Turkish' },
+  { code: 'it-IT', label: 'Italian' },
 ];
 
 interface VoicePanelProps {
@@ -56,6 +56,9 @@ interface VoicePanelProps {
   isListening: boolean;
   onSendText?: (text: string) => void;
   onReset: () => void;
+  onHeightReset?: () => void;
+  isHeightAuto?: boolean;
+  style?: React.CSSProperties;
 }
 
 export function VoicePanel({
@@ -68,6 +71,9 @@ export function VoicePanel({
   isListening,
   onSendText,
   onReset,
+  onHeightReset,
+  isHeightAuto = true,
+  style,
 }: VoicePanelProps) {
   const { settings, updateSetting } = useSetting();
   const { status: agentStatus } = useStore();
@@ -93,11 +99,14 @@ export function VoicePanel({
     isPaused,
     textInput,
     setTextInput,
+    runInBackground,
+    setRunInBackground,
   } = useVoiceStore();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [taskKB, setTaskKB] = useState<any>(null);
   const [taskExpanded, setTaskExpanded] = useState(false);
+  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -143,11 +152,15 @@ export function VoicePanel({
     if (avatarState === 'listening') return '🎙️ LISTENING';
     if (avatarState === 'thinking') return '🧠 THINKING';
     if (avatarState === 'speaking') return '🔊 SPEAKING';
-    return 'NOT LISTENING';
+    return (
+      <>
+        <Pause size={10} strokeWidth={2} style={{ marginTop: '-1px' }} /> STANDBY
+      </>
+    );
   };
 
   return (
-    <div className="voice-panel">
+    <div className="voice-panel" style={style}>
       {/* Header */}
       <div className="voice-panel-header">
         <RobotAvatar state={avatarState} size={28} />
@@ -157,19 +170,11 @@ export function VoicePanel({
         </span>
         <button
           className="voice-ctrl-btn hover:text-indigo-400 hover:border-indigo-400/40"
-          onClick={() => window.electron.ipcRenderer.invoke('hibee-agent:toggle').catch(() => {})}
-          title="Open Hi-Bee AI Agent Chat (Ctrl+Shift+H)"
-          style={{ marginRight: 4 }}
-        >
-          <Bot size={12} strokeWidth={1.5} />
-        </button>
-        <button
-          className="voice-ctrl-btn hover:text-indigo-400 hover:border-indigo-400/40"
           onClick={() => window.electron.ipcRenderer.invoke('voice:open-settings').catch(() => {})}
           title="Open Settings Configuration"
           style={{ marginRight: 4 }}
         >
-          <Settings size={12} strokeWidth={1.5} />
+          <Settings size={12} strokeWidth={1} />
         </button>
         <button
           className="voice-ctrl-btn hover:text-red-500 hover:border-red-500/40"
@@ -177,45 +182,47 @@ export function VoicePanel({
           title="Turn off Voice Agent completely"
           style={{ marginRight: 6 }}
         >
-          <Power size={12} strokeWidth={1.5} />
+          <Power size={12} strokeWidth={1} />
         </button>
         <button className="voice-ctrl-btn" onClick={onClose} title="Minimize to orb">
-          <X size={12} strokeWidth={1.5} />
+          <X size={12} strokeWidth={1} />
         </button>
       </div>
 
-      {/* Conversation history */}
-      <div className="voice-transcript" ref={scrollRef}>
-        {history.length === 0 && (
-          <div className="voice-empty-placeholder">
-            {inputMode === 'text' ? 'Type a message to start chatting…' : 'Say something to start a conversation…'}
-          </div>
-        )}
-        {history.map((turn) => (
-          <div key={turn.id} className={`voice-turn ${turn.role === 'user' ? 'user' : 'assistant'}`}>
-            <div>{turn.text}</div>
-            {turn.latencyMs && turn.role === 'assistant' && (
-              <div style={{ fontSize: '9px', color: '#475569', marginTop: 2 }}>
-                ⚡ {turn.latencyMs}ms
-              </div>
-            )}
-            {turn.citations && turn.citations.length > 0 && (
-              <div style={{ marginTop: 6 }}>
-                {turn.citations.map((c, i) => (
-                  <a
-                    key={i}
-                    href={c.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="voice-citation-chip"
-                    onClick={(e) => { e.preventDefault(); window.open(c.url, '_blank'); }}
-                  >
-                    <ExternalLink size={8} strokeWidth={1.5} />
-                    {c.title.slice(0, 32)}{c.title.length > 32 ? '…' : ''}
-                  </a>
-                ))}
-              </div>
-            )}
+      {/* Conversation History (Expands to fill vertical space) */}
+      <div 
+        ref={scrollRef}
+        className="voice-chat-history custom-scrollbar" 
+        style={{ 
+          flex: 1, 
+          overflowY: 'auto', 
+          padding: '12px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          maxHeight: isHeightAuto ? '200px' : 'none',
+          minHeight: history.length > 0 ? '60px' : '0px'
+        }}
+      >
+        {history.map((msg, i) => (
+          <div 
+            key={i} 
+            className={`voice-msg ${msg.role}`}
+            style={{
+              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              background: msg.role === 'user' ? '#0ea5e9' : 'rgba(15, 23, 42, 0.06)',
+              color: msg.role === 'user' ? '#fff' : '#334155',
+              padding: '8px 12px',
+              borderRadius: '12px',
+              borderBottomRightRadius: msg.role === 'user' ? '4px' : '12px',
+              borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : '12px',
+              maxWidth: '85%',
+              fontSize: '13px',
+              lineHeight: 1.4,
+              wordBreak: 'break-word'
+            }}
+          >
+            {msg.text}
           </div>
         ))}
       </div>
@@ -259,7 +266,7 @@ export function VoicePanel({
             transition: 'all 0.2s'
           }}
         >
-          {isListening ? <Square size={12} strokeWidth={1.5} fill="currentColor" /> : <Mic size={12} strokeWidth={1.5} />}
+          {isListening ? <Square size={12} strokeWidth={1} fill="currentColor" /> : <Mic size={12} strokeWidth={1} />}
         </button>
 
         {/* Send Button */}
@@ -282,82 +289,99 @@ export function VoicePanel({
             transition: 'all 0.2s'
           }}
         >
-          <Send size={12} strokeWidth={1.5} />
+          <Send size={12} strokeWidth={1} />
         </button>
       </form>
 
-      {/* Footer / Controls Section */}
-      <div className="voice-footer">
-        {/* Dropdowns Row (Language and Voice Accent selectors) */}
-        <div className="voice-settings-row">
-          <select
-            className="voice-lang-select"
-            value={selectedLanguage}
-            onChange={(e) => {
-              const lang = e.target.value;
-              setLanguage(lang);
-              // Persist to settings so it survives app restart
-              updateSetting({ ...settings, voiceLanguage: lang });
-            }}
-            title="Select Language"
-          >
-            {LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
+      {/* Settings Toggle */}
+      <div 
+        style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b', fontWeight: 600, background: '#f8fafc' }}
+        onClick={() => {
+          setIsSettingsExpanded(!isSettingsExpanded);
+          onHeightReset?.();
+        }}
+        title="Toggle Voice Settings"
+      >
+        <span>Voice Settings</span>
+        {isSettingsExpanded ? <ChevronUp size={14} strokeWidth={2} /> : <ChevronDown size={14} strokeWidth={2} />}
+      </div>
 
-          {langVoices.length > 1 && (
+      {/* Footer / Controls Section */}
+      {isSettingsExpanded && (
+        <div className="voice-footer">
+          {/* Dropdowns Row (Language and Voice Accent selectors) */}
+          <div className="voice-settings-row">
             <select
-              className="voice-lang-select voice-accent-select"
-              value={selectedVoiceURI}
-              onChange={(e) => setVoice(e.target.value)}
-              title="Select Voice/Accent"
+              className="voice-lang-select"
+              value={selectedLanguage}
+              onChange={(e) => {
+                const lang = e.target.value;
+                setLanguage(lang);
+                // Persist to settings so it survives app restart
+                updateSetting({ ...settings, voiceLanguage: lang });
+              }}
+              title="Select Language"
             >
-              <option value="">Default Accent</option>
-              {langVoices.map((v) => (
-                <option key={v.voiceURI} value={v.voiceURI}>
-                  {v.name.replace(/(Google |Microsoft )/g, '').slice(0, 20)}
-                </option>
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
               ))}
             </select>
-          )}
-        </div>
 
-        {/* Wakeup Mode and Wake Phrase Settings Row */}
-        <div className="voice-settings-row">
-          <select
-            className="voice-lang-select"
-            value={voiceWakeupMode}
-            onChange={(e) => {
-              const val = e.target.value as 'hotkey' | 'phrase' | 'live_agent';
-              setWakeupMode(val);
-              updateSetting({ ...settings, voiceWakeupMode: val });
-            }}
-            title="Select Wake Mode"
-          >
-            <option value="hotkey">🔑 Hotkey Mode</option>
-            <option value="phrase">🗣️ Wake Word</option>
-            <option value="live_agent">🤖 Live Agent</option>
-          </select>
+            {langVoices.length > 1 && (
+              <select
+                className="voice-lang-select voice-accent-select"
+                value={selectedVoiceURI}
+                onChange={(e) => setVoice(e.target.value)}
+                title="Select Voice/Accent"
+              >
+                <option value="">Default Accent</option>
+                {langVoices.map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name.replace(/(Google |Microsoft )/g, '').slice(0, 20)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
 
-          {voiceWakeupMode === 'phrase' && (
-            <input
-              type="text"
-              className="voice-lang-select voice-accent-select"
-              style={{ padding: '0 8px', fontSize: '11px', height: '32px' }}
-              value={voiceWakePhrase}
+          {/* Wakeup Mode and Wake Phrase Settings Row */}
+          <div className="voice-settings-row">
+            <select
+              className="voice-lang-select"
+              value={voiceWakeupMode}
               onChange={(e) => {
-                const val = e.target.value;
-                setWakePhrase(val);
-                updateSetting({ ...settings, voiceWakePhrase: val });
+                const val = e.target.value as 'hotkey' | 'phrase' | 'live_agent';
+                setWakeupMode(val);
+                updateSetting({ ...settings, voiceWakeupMode: val });
               }}
-              placeholder="Wake Phrase"
-              title="Wake Phrase"
-            />
-          )}
-        </div>
+              title="Select Wake Mode"
+            >
+              <option value="hotkey">🔑 Hotkey Mode</option>
+              <option value="phrase">🗣️ Wake Word</option>
+              <option value="live_agent">🤖 Live Agent</option>
+            </select>
 
-        {/* Actions/Controls Row */}
+            {voiceWakeupMode === 'phrase' && (
+              <input
+                type="text"
+                className="voice-lang-select voice-accent-select"
+                style={{ padding: '0 8px', fontSize: '11px', height: '32px' }}
+                value={voiceWakePhrase}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setWakePhrase(val);
+                  updateSetting({ ...settings, voiceWakePhrase: val });
+                }}
+                placeholder="Wake Phrase"
+                title="Wake Phrase"
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Actions/Controls Row - Always Visible */}
+      <div className="voice-footer" style={{ borderTop: isSettingsExpanded ? 'none' : '1px solid #e2e8f0', paddingTop: isSettingsExpanded ? '0' : '14px' }}>
         <div className="voice-controls-row">
           {/* Start/Stop Mic Button */}
           <button
@@ -371,7 +395,7 @@ export function VoicePanel({
               background: isListening ? 'rgba(239, 68, 68, 0.15)' : undefined,
             }}
           >
-            {isListening ? <Mic size={16} strokeWidth={1.5} className="listening-pulse" /> : <MicOff size={16} strokeWidth={1.5} />}
+            {isListening ? <Mic size={16} strokeWidth={1} className="listening-pulse" /> : <MicOff size={16} strokeWidth={1} />}
           </button>
 
           {/* Mute toggle */}
@@ -380,7 +404,21 @@ export function VoicePanel({
             onClick={toggleMuted}
             title={isMuted ? 'Unmute Voice output' : 'Mute Voice output'}
           >
-            {isMuted ? <VolumeX size={16} strokeWidth={1.5} /> : <Volume2 size={16} strokeWidth={1.5} />}
+            {isMuted ? <VolumeX size={16} strokeWidth={1} /> : <Volume2 size={16} strokeWidth={1} />}
+          </button>
+
+          {/* Background Execution Toggle */}
+          <button
+            className={`voice-ctrl-btn ${runInBackground ? 'active' : ''}`}
+            onClick={() => setRunInBackground(!runInBackground)}
+            title={runInBackground ? 'Background Mode: ON (Apps launch without focus)' : 'Background Mode: OFF (Apps steal focus)'}
+            style={{
+              color: runInBackground ? '#a78bfa' : undefined,
+              borderColor: runInBackground ? '#8b5cf6' : undefined,
+              background: runInBackground ? 'rgba(167, 139, 250, 0.15)' : undefined,
+            }}
+          >
+            {runInBackground ? <EyeOff size={16} strokeWidth={1} /> : <Eye size={16} strokeWidth={1} />}
           </button>
 
           {/* Reset Memory / Clear Memory Button */}
@@ -391,7 +429,7 @@ export function VoicePanel({
             onClick={onReset}
             title="Reset/Clear memory and start fresh"
           >
-            <RotateCcw size={16} strokeWidth={1.5} />
+            <RotateCcw size={16} strokeWidth={1} />
           </button>
 
           {/* TTS Play/Pause controls */}
@@ -403,7 +441,7 @@ export function VoicePanel({
                   onClick={onPauseTTS}
                   title="Pause response"
                 >
-                  <Pause size={16} strokeWidth={1.5} />
+                  <Pause size={16} strokeWidth={1} />
                 </button>
               ) : (
                 <button
@@ -411,7 +449,7 @@ export function VoicePanel({
                   onClick={isPaused ? onResumeTTS : onPlayLast}
                   title={isPaused ? "Resume response" : "Replay last response"}
                 >
-                  <Play size={16} strokeWidth={1.5} />
+                  <Play size={16} strokeWidth={1} />
                 </button>
               )}
 
@@ -421,7 +459,7 @@ export function VoicePanel({
                   onClick={onStopTTS}
                   title="Stop speaking"
                 >
-                  <Square size={12} strokeWidth={1.5} fill="currentColor" style={{ transform: 'scale(0.8)' }} />
+                  <Square size={12} strokeWidth={1} fill="currentColor" style={{ transform: 'scale(0.8)' }} />
                 </button>
               )}
             </div>
@@ -456,7 +494,7 @@ export function VoicePanel({
               }}
               title="Stop Agent Task"
             >
-              <Square size={16} strokeWidth={1.5} fill="currentColor" />
+              <Square size={16} strokeWidth={1} fill="currentColor" />
             </button>
           )}
         </div>
@@ -471,7 +509,7 @@ export function VoicePanel({
             onClick={() => setTaskExpanded((v) => !v)}
           >
             Task: {taskKB.taskTitle}
-            {taskExpanded ? <ChevronUp size={10} strokeWidth={1.5} /> : <ChevronDown size={10} strokeWidth={1.5} />}
+            {taskExpanded ? <ChevronUp size={10} strokeWidth={1} /> : <ChevronDown size={10} strokeWidth={1} />}
           </div>
           {taskExpanded && taskKB.steps.map((step: any) => (
             <div key={step.stepNumber} className="voice-task-step">
@@ -483,6 +521,24 @@ export function VoicePanel({
           ))}
         </div>
       )}
+
+      {/* Visual Resize Handle (Bottom Right) */}
+      <div 
+        style={{ 
+          position: 'absolute', 
+          bottom: 2, 
+          right: 2, 
+          pointerEvents: 'none', 
+          opacity: 0.3,
+          color: '#64748b',
+          zIndex: 10
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="15 3 21 3 21 9"></polyline>
+          <line x1="9" y1="21" x2="21" y2="9"></line>
+        </svg>
+      </div>
     </div>
   );
 }

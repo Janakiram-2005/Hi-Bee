@@ -150,12 +150,39 @@ export function useCloudSTT({
   const pendingConfirmTextRef = useRef(pendingConfirmText);
   const startListeningRef = useRef<((isBackground?: boolean) => Promise<void>) | null>(null);
 
-  // Keep refs in sync with store
+  const onCommitRef = useRef(onCommit);
+  const onInterruptRef = useRef(onInterrupt);
+  const onPermissionDeniedRef = useRef(onPermissionDenied);
+  const speakRef = useRef(speak);
+  const abortStartupRef = useRef(false);
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Keep refs in sync with store / options
   useEffect(() => { languageRef.current = selectedLanguage; }, [selectedLanguage]);
   useEffect(() => { avatarStateRef.current = avatarState; }, [avatarState]);
   useEffect(() => { voiceWakeupModeRef.current = voiceWakeupMode; }, [voiceWakeupMode]);
   useEffect(() => { voiceWakePhraseRef.current = voiceWakePhrase; }, [voiceWakePhrase]);
   useEffect(() => { pendingConfirmTextRef.current = pendingConfirmText; }, [pendingConfirmText]);
+  useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
+  useEffect(() => { onInterruptRef.current = onInterrupt; }, [onInterrupt]);
+  useEffect(() => { onPermissionDeniedRef.current = onPermissionDenied; }, [onPermissionDenied]);
+  useEffect(() => { speakRef.current = speak; }, [speak]);
+
+  // Transition timeout helpers
+  const clearTransitionTimeout = useCallback(() => {
+    if (transitionTimeoutRef.current) {
+      clearTimeout(transitionTimeoutRef.current);
+      transitionTimeoutRef.current = null;
+    }
+  }, []);
+
+  const setTransitionTimeout = useCallback((callback: () => void, delay: number) => {
+    clearTransitionTimeout();
+    transitionTimeoutRef.current = setTimeout(() => {
+      transitionTimeoutRef.current = null;
+      callback();
+    }, delay);
+  }, [clearTransitionTimeout]);
 
   // ─── Helper: get localised confirmation prompts ──────────────────────────
   const getConfirmMessages = (lang: string) => {
@@ -215,8 +242,8 @@ export function useCloudSTT({
     // 1. In 'confirming' state — user is answering yes/no to a task confirmation
     if (avatarStateRef.current === 'confirming') {
       const lower = finalText.toLowerCase();
-      const isYes = /\b(yes|yeah|sure|go\s+ahead|do\s+it|ok|okay|yup|yep|confirm|please|అవును|హా|ఆమ్|ಹೌದು|അതെ|हाँ|हा|ji|ji\s+haan|acha)\b/i.test(lower);
-      const isNo = /\b(no|nay|dont|don't|stop|cancel|nevermind|nope|వద్దు|నొ|నహి|రద్దు|నా|ಬೇಡ|വേണ്ട|नहीं|नही|mat|ruk)\b/i.test(lower);
+      const isYes = /\b(yes|yeah|sure|go\s+ahead|do\s+it|ok|okay|yup|yep|confirm|please|అవును|హా|ఆమ్|హೌದು|അതെ|हाँ|हा|ji|ji\s+haan|acha)\b/i.test(lower);
+      const isNo = /\b(no|nay|dont|don't|stop|cancel|nevermind|nope|వద్దు|నొ|నహి|రద్దు|నా|ಬೇಡ|ವೇಳೆ|नहीं|नही|mat|ruk)\b/i.test(lower);
 
       const task = pendingConfirmTextRef.current;
       setPendingConfirmText(null);
@@ -225,14 +252,14 @@ export function useCloudSTT({
 
       if (isYes && task) {
         setAvatarState('executing');
-        speak?.(msgs.ok);
-        onCommit(task);
+        speakRef.current?.(msgs.ok);
+        onCommitRef.current(task);
       } else {
         setAvatarState('idle');
-        speak?.(isNo ? msgs.cancel : msgs.fail);
+        speakRef.current?.(isNo ? msgs.cancel : msgs.fail);
         // After cancel, restart background listening if in phrase/live_agent mode
         if (voiceWakeupModeRef.current !== 'hotkey') {
-          setTimeout(() => startListeningRef.current?.(true), 1500);
+          setTransitionTimeout(() => startListeningRef.current?.(true), 1500);
         }
       }
       return;
@@ -252,17 +279,18 @@ export function useCloudSTT({
           if (cmd.length > 2) {
             // Command given right after wake phrase — commit immediately
             setAvatarState('thinking');
-            onCommit(cmd);
+            onCommitRef.current(cmd);
           } else {
             // Only wake phrase spoken, no command — switch to foreground listening
             setAvatarState('listening');
-            await speak?.(getListenPrompt(languageRef.current));
-            // Give 600ms for TTS to start then restart foreground
-            setTimeout(() => startListeningRef.current?.(false), 600);
+            await speakRef.current?.(getListenPrompt(languageRef.current));
+            // Let the speak's onended state transition to 'listening' start the mic,
+            // but keep a backup transition timeout to be safe.
+            setTransitionTimeout(() => startListeningRef.current?.(false), 800);
           }
         } else {
           // No wake phrase, restart background loop
-          setTimeout(() => startListeningRef.current?.(true), 200);
+          setTransitionTimeout(() => startListeningRef.current?.(true), 200);
         }
         return;
       }
@@ -300,31 +328,46 @@ export function useCloudSTT({
               }
             }
 
-            await speak?.(promptText);
+            await speakRef.current?.(promptText);
 
-            // After TTS ends (2s buffer), restart FOREGROUND listening for yes/no
-            setTimeout(() => startListeningRef.current?.(false), 2000);
+            // Let the speak's onended state transition start the mic,
+            // but keep a backup transition timeout to be safe.
+            setTransitionTimeout(() => startListeningRef.current?.(false), 2200);
+          } else if (analysis?.is_conversation) {
+            // Casual conversation directed at the agent!
+            // Pass it directly to the chat handler.
+            api.logFromRenderer({ message: `[useCloudSTT] live_agent detected casual conversation, forwarding to chat.` }).catch(() => {});
+            setAvatarState('thinking');
+            onCommitRef.current(finalText);
           } else {
-            // Not actionable — restart background loop
-            setTimeout(() => startListeningRef.current?.(true), 300);
+            // Not actionable and not conversation — restart background loop
+            setTransitionTimeout(() => startListeningRef.current?.(true), 300);
           }
         } catch (err) {
           console.warn('[useCloudSTT] live_agent intent check failed:', err);
-          setTimeout(() => startListeningRef.current?.(true), 500);
+          setTransitionTimeout(() => startListeningRef.current?.(true), 500);
         }
         return;
       }
     }
 
     // 3. Foreground listening — commit to main chat handler
-    onCommit(finalText);
-  }, [onCommit, setAvatarState, setPendingConfirmText, speak]);
+    onCommitRef.current(finalText);
+  }, [setAvatarState, setPendingConfirmText, setTransitionTimeout]);
 
   // ─── Stop listening and optionally commit ────────────────────────────────
   const stopListening = useCallback((shouldCommit = false) => {
     const wasBackground = isBackgroundRef.current;
     isListeningRef.current = false;
     api.logFromRenderer({ message: `[useCloudSTT] stopListening: shouldCommit=${shouldCommit}, bg=${wasBackground}` }).catch(() => {});
+
+    // Abort active startup if stop is requested
+    if (isStartingRef.current) {
+      abortStartupRef.current = true;
+    }
+
+    // Clear any pending transitions
+    clearTransitionTimeout();
 
     // Clear VAD interval
     if (vadIntervalRef.current) {
@@ -351,7 +394,7 @@ export function useCloudSTT({
       }
       // On background stop without commit, restart background loop if applicable
       if (wasBackground && voiceWakeupModeRef.current !== 'hotkey') {
-        setTimeout(() => startListeningRef.current?.(true), 300);
+        setTransitionTimeout(() => startListeningRef.current?.(true), 300);
       }
       // Cleanup stream
       try { currentStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}
@@ -390,7 +433,7 @@ export function useCloudSTT({
                 if (!wasBackground) {
                   setAvatarState('idle');
                 } else if (voiceWakeupModeRef.current !== 'hotkey') {
-                  setTimeout(() => startListeningRef.current?.(true), 300);
+                  setTransitionTimeout(() => startListeningRef.current?.(true), 300);
                 }
               }
             } catch (err) {
@@ -398,7 +441,7 @@ export function useCloudSTT({
               if (!wasBackground) {
                 setAvatarState('idle');
               } else if (voiceWakeupModeRef.current !== 'hotkey') {
-                setTimeout(() => startListeningRef.current?.(true), 500);
+                setTransitionTimeout(() => startListeningRef.current?.(true), 500);
               }
             }
           } else {
@@ -406,13 +449,13 @@ export function useCloudSTT({
             if (!wasBackground) {
               setAvatarState('idle');
             } else if (voiceWakeupModeRef.current !== 'hotkey') {
-              setTimeout(() => startListeningRef.current?.(true), 300);
+              setTransitionTimeout(() => startListeningRef.current?.(true), 300);
             }
           }
         } else {
           chunksRef.current = [];
           if (wasBackground && voiceWakeupModeRef.current !== 'hotkey') {
-            setTimeout(() => startListeningRef.current?.(true), 300);
+            setTransitionTimeout(() => startListeningRef.current?.(true), 300);
           }
         }
       };
@@ -421,18 +464,22 @@ export function useCloudSTT({
     } else {
       chunksRef.current = [];
       if (wasBackground && voiceWakeupModeRef.current !== 'hotkey') {
-        setTimeout(() => startListeningRef.current?.(true), 300);
+        setTransitionTimeout(() => startListeningRef.current?.(true), 300);
       }
     }
 
     try { currentStream?.getTracks().forEach((t) => t.stop()); } catch (_) {}
-  }, [setAvatarState, handleTranscript]);
+  }, [setAvatarState, handleTranscript, clearTransitionTimeout, setTransitionTimeout]);
 
   // ─── Start listening session ─────────────────────────────────────────────
   const startListening = useCallback(async (isBackground = false) => {
     if (isListeningRef.current || isStartingRef.current) return;
     isStartingRef.current = true;
     isBackgroundRef.current = isBackground;
+    abortStartupRef.current = false;
+
+    // Clear any pending transition timeouts before starting
+    clearTransitionTimeout();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -444,6 +491,12 @@ export function useCloudSTT({
         },
         video: false,
       });
+
+      if (abortStartupRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        isStartingRef.current = false;
+        return;
+      }
 
       streamRef.current = stream;
       mimeTypeRef.current = getSupportedMimeType();
@@ -472,7 +525,7 @@ export function useCloudSTT({
       recorder.onerror = (e) => {
         console.error('[useCloudSTT] MediaRecorder error:', e);
         stopListening();
-        onPermissionDenied?.();
+        onPermissionDeniedRef.current?.();
       };
 
       mediaRecorderRef.current = recorder;
@@ -515,12 +568,10 @@ export function useCloudSTT({
         //   An RMS of 0.010 corresponds to approximately -40dB amplitude.
         const speechThreshold = 0.010;
 
-        // Interrupt TTS if user speaks during speaking state
+        // If the avatar is speaking, we ignore VAD checks entirely to prevent echo self-interruption.
+        // We rely on the sync useEffect to stop listening, but in case of a race condition before
+        // the microphone is fully stopped, we return early here.
         if (avatarStateRef.current === 'speaking') {
-          if (rms > speechThreshold) {
-            api.logFromRenderer({ message: `[VAD] User speech during TTS (RMS: ${rms.toFixed(4)}) → Interrupting` }).catch(() => {});
-            onInterrupt?.();
-          }
           return;
         }
 
@@ -568,12 +619,12 @@ export function useCloudSTT({
       const name = err?.name ?? String(err);
       console.error('[useCloudSTT] getUserMedia / VAD setup failed:', name, err);
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'NotFoundError') {
-        onPermissionDenied?.();
+        onPermissionDeniedRef.current?.();
       }
     } finally {
       isStartingRef.current = false;
     }
-  }, [silenceMs, onInterrupt, onPermissionDenied, stopListening, setAvatarState]);
+  }, [silenceMs, stopListening, setAvatarState, clearTransitionTimeout]);
 
   // Sync startListening ref
   useEffect(() => {
@@ -606,8 +657,14 @@ export function useCloudSTT({
           startListeningRef.current?.(true);
         }
       }, 400);
-    } else if (avatarState === 'executing' || avatarState === 'thinking') {
-      // Stop listening while agent is working
+    } else if (avatarState === 'listening' || avatarState === 'confirming') {
+      t = setTimeout(() => {
+        if (!isListeningRef.current && !isStartingRef.current) {
+          startListeningRef.current?.(false);
+        }
+      }, 100);
+    } else if (avatarState === 'executing' || avatarState === 'thinking' || avatarState === 'speaking') {
+      // Stop listening while agent is working or speaking
       if (isListeningRef.current) {
         stopListening(false);
       }
@@ -623,20 +680,21 @@ export function useCloudSTT({
     if (isListeningRef.current) {
       const isBg = isBackgroundRef.current;
       stopListening(false);
-      setTimeout(() => startListeningRef.current?.(isBg), 400);
+      setTransitionTimeout(() => startListeningRef.current?.(isBg), 400);
     }
-  }, [selectedLanguage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedLanguage, stopListening, setTransitionTimeout]);
 
   // ─── Cleanup on unmount ─────────────────────────────────────────────────
   useEffect(() => {
     return () => {
       isListeningRef.current = false;
+      clearTransitionTimeout();
       if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
       if (audioContextRef.current) audioContextRef.current.close().catch(() => {});
       try { mediaRecorderRef.current?.stop(); } catch (_) {}
       try { streamRef.current?.getTracks().forEach((t) => t.stop()); } catch (_) {}
     };
-  }, []);
+  }, [clearTransitionTimeout]);
 
   return {
     startListening,

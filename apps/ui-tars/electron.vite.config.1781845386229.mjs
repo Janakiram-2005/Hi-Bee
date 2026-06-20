@@ -1,0 +1,256 @@
+// electron.vite.config.ts
+import { resolve } from "node:path";
+import react from "@vitejs/plugin-react";
+import {
+  defineConfig,
+  externalizeDepsPlugin,
+  bytecodePlugin
+} from "electron-vite";
+import tsconfigPaths from "vite-tsconfig-paths";
+
+// package.json
+var package_default = {
+  name: "ui-tars-desktop",
+  version: "0.2.4",
+  private: true,
+  main: "./dist/main/main.js",
+  packageManager: "pnpm@9.10.0",
+  description: "A GUI Agent application based on UI-TARS(Vision-Lanuage Model) that allows you to control your computer using natural language.",
+  author: "ByteDance",
+  scripts: {
+    format: "prettier --write .",
+    lint: "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --pretty --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --pretty --composite false",
+    typecheck: "npm run typecheck:node && npm run typecheck:web",
+    start: "electron-vite preview",
+    dev: "electron-vite dev",
+    debug: "electron-vite dev --sourcemap --remote-debugging-port=9222",
+    "debug:w": "electron-vite dev -w --sourcemap --remote-debugging-port=9222",
+    "dev:w": "electron-vite dev -w",
+    "asar:analyze": "asar extract out/UI\\ TARS-darwin-arm64/UI\\ TARS.app/Contents/Resources/app.asar ./dist/asar",
+    package: "electron-forge package",
+    clean: "rimraf dist out",
+    test: "vitest",
+    "test:bench": "vitest bench",
+    coverage: "vitest run --coverage",
+    "build:e2e": "npm run build:dist && cross-env CI=e2e npm run package",
+    "test:e2e": "playwright test",
+    "build:deps": 'pnpm --filter "!ui-tars-desktop,ui-tars-desktop..." build && cd packages/visualizer && pnpm install --ignore-workspace',
+    "build:dist": "cross-env NODE_ENV=production electron-vite build",
+    build: "npm run clean && npm run typecheck && cross-env NODE_ENV=production electron-vite build && electron-forge make --enable-logging",
+    make: "electron-forge make",
+    "publish:mac-x64": "npm run build && electron-forge publish --arch=x64 --platform=darwin",
+    "publish:mac-arm64": "npm run build && electron-forge publish --arch=arm64 --platform=darwin",
+    "publish:win32": "npm run build && electron-forge publish --arch=x64 --platform=win32",
+    "publish:win32-arm64": "npm run build && electron-forge publish --arch=arm64 --platform=win32",
+    publish: "npm run build && electron-forge publish"
+  },
+  build: {
+    electronDownload: {
+      mirror: "https://npmmirror.com/mirrors/electron/"
+    }
+  },
+  peerDependencies: {
+    "esbuild-register": "*",
+    "ts-node": "*",
+    tsx: "*"
+  },
+  peerDependenciesMeta: {
+    "esbuild-register": {
+      optional: true
+    },
+    "ts-node": {
+      optional: true
+    },
+    tsx: {
+      optional: true
+    }
+  },
+  dependencies: {
+    "@computer-use/node-mac-permissions": "2.2.2",
+    "@google-cloud/vertexai": "^1.12.0",
+    "@types/ws": "^8.18.1",
+    jose: "^6.0.11",
+    mongodb: "^7.2.0",
+    sharp: "0.33.3",
+    ws: "^8.21.0"
+  },
+  devDependencies: {
+    "@common/electron-build": "workspace:*",
+    "@computer-use/mac-screen-capture-permissions": "^1.0.2",
+    "@computer-use/nut-js": "^4.2.0",
+    "@electron-forge/cli": "^7.7.0",
+    "@electron-forge/maker-dmg": "^7.7.0",
+    "@electron-forge/maker-pkg": "^7.7.0",
+    "@electron-forge/maker-squirrel": "^7.7.0",
+    "@electron-forge/maker-zip": "^7.7.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.7.0",
+    "@electron-forge/plugin-base": "^7.7.0",
+    "@electron-forge/plugin-fuses": "^7.7.0",
+    "@electron-forge/plugin-vite": "^7.7.0",
+    "@electron-forge/publisher-github": "^7.7.0",
+    "@electron-forge/shared-types": "^7.7.0",
+    "@electron-toolkit/eslint-config-prettier": "^2.0.0",
+    "@electron-toolkit/eslint-config-ts": "^2.0.0",
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@electron/asar": "^3.2.18",
+    "@electron/fuses": "^1.8.0",
+    "@tailwindcss/vite": "4.1.3",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.1",
+    "@types/node": "^20.14.8",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "@ui-tars/action-parser": "workspace:*",
+    "@ui-tars/electron-ipc": "workspace:*",
+    "@ui-tars/operator-browser": "workspace:*",
+    "@ui-tars/operator-nut-js": "workspace:*",
+    "@ui-tars/sdk": "workspace:*",
+    "@ui-tars/shared": "workspace:*",
+    "@ui-tars/utio": "workspace:*",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-istanbul": "^3.0.3",
+    "builder-util-runtime": "9.3.1",
+    "cross-env": "^7.0.3",
+    dotenv: "^16.4.7",
+    electron: "34.1.1",
+    "electron-debug": "^3.2.0",
+    "electron-devtools-installer": "^3.2.0",
+    "electron-log": "5.2.4",
+    "electron-packager-languages": "0.5.0",
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-store": "^10.0.0",
+    "electron-updater": "^6.6.2",
+    "electron-vite": "^3.0.0",
+    eslint: "^8.57.0",
+    "eslint-plugin-import": "^2.25.0",
+    "eslint-plugin-react": "^7.34.3",
+    "js-yaml": "^4.1.0",
+    ms: "^2.1.3",
+    "node-machine-id": "^1.1.12",
+    prettier: "^3.3.2",
+    rimraf: "^6.0.1",
+    "sass-embedded": "^1.83.1",
+    semver: "7.7.2",
+    tailwindcss: "4.1.3",
+    "ts-node": "^10.9.2",
+    tsx: "^4.19.2",
+    typescript: "^5.7.2",
+    vite: "^6.1.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    vitest: "^3.0.8",
+    zustand: "^5.0.0"
+  },
+  engines: {
+    node: ">=20.x"
+  }
+};
+
+// scripts/getExternalPkgs.ts
+var getExternalPkgs = () => {
+  const { platform } = process;
+  return [
+    ...Object.keys(package_default.dependencies),
+    ...platform === "darwin" ? ["@computer-use/libnut-darwin"] : platform === "win32" ? ["@computer-use/libnut-win32"] : platform === "linux" ? ["@computer-use/libnut-linux"] : []
+  ];
+};
+
+// electron.vite.config.ts
+import tailwindcss from "@tailwindcss/vite";
+var __electron_vite_injected_dirname = "C:\\Users\\msjan\\Desktop\\UI-TARS-desktop\\apps\\ui-tars";
+var electron_vite_config_default = defineConfig({
+  main: {
+    define: {
+      "process.env.UI_TARS_APP_PRIVATE_KEY_BASE64": JSON.stringify(
+        process.env.UI_TARS_APP_PRIVATE_KEY_BASE64
+      )
+    },
+    build: {
+      outDir: "dist/main",
+      lib: {
+        entry: "./src/main/main.ts"
+      },
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("app_private")) {
+              return "app_private";
+            }
+          }
+        }
+      }
+    },
+    plugins: [
+      bytecodePlugin({
+        chunkAlias: "app_private",
+        protectedStrings: [process.env.UI_TARS_APP_PRIVATE_KEY_BASE64].filter(
+          (s) => !!s
+        )
+      }),
+      tsconfigPaths(),
+      externalizeDepsPlugin({
+        include: [
+          ...getExternalPkgs(),
+          "@ui-tars/sdk",
+          "@ui-tars/shared",
+          "@ui-tars/action-parser"
+        ]
+      }),
+      {
+        name: "native-node-module-path",
+        enforce: "pre",
+        resolveId(source) {
+          if (source.includes("screencapturepermissions.node")) {
+            return {
+              id: "@computer-use/mac-screen-capture-permissions/build/Release/screencapturepermissions.node",
+              external: true
+            };
+          }
+          return null;
+        }
+      }
+    ]
+  },
+  preload: {
+    build: {
+      outDir: "dist/preload",
+      lib: {
+        entry: "./src/preload/index.ts"
+      }
+    },
+    plugins: [tsconfigPaths()]
+  },
+  renderer: {
+    root: "src/renderer",
+    build: {
+      outDir: "dist/renderer",
+      rollupOptions: {
+        input: {
+          main: resolve("./src/renderer/index.html")
+        }
+      },
+      minify: true
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          api: "modern"
+        }
+      }
+    },
+    plugins: [react(), tsconfigPaths(), tailwindcss()],
+    define: {
+      APP_VERSION: JSON.stringify(package_default.version)
+    },
+    resolve: {
+      alias: {
+        crypto: resolve(__electron_vite_injected_dirname, "src/renderer/src/polyfills/crypto.ts")
+      }
+    }
+  }
+});
+export {
+  electron_vite_config_default as default
+};

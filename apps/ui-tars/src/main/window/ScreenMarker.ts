@@ -64,66 +64,59 @@ class ScreenMarker {
 
     this.screenWaterFlow.setFocusable(false);
     this.screenWaterFlow.setContentProtection(false);
-    this.screenWaterFlow.setIgnoreMouseEvents(true);
+    this.screenWaterFlow.setIgnoreMouseEvents(true, { forward: true });
+
+    if (env.isWindows) {
+      this.screenWaterFlow.setAlwaysOnTop(true, 'screen-saver');
+    }
 
     this.screenWaterFlow.loadURL(`data:text/html;charset=UTF-8,
       <html>
         <head>
-          <style id="water-flow-animation">
-            html::before {
-              content: "";
+          <style>
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: 100%;
+              height: 100%;
+              overflow: hidden;
+              background: transparent;
+            }
+            .neon-border {
               position: fixed;
-              top: 0; right: 0; bottom: 0; left: 0;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              box-sizing: border-box;
               pointer-events: none;
               z-index: 9999;
-              background:
-                linear-gradient(to right, rgba(30, 144, 255, 0.4), transparent 50%) left,
-                linear-gradient(to left, rgba(30, 144, 255, 0.4), transparent 50%) right,
-                linear-gradient(to bottom, rgba(30, 144, 255, 0.4), transparent 50%) top,
-                linear-gradient(to top, rgba(30, 144, 255, 0.4), transparent 50%) bottom;
-              background-repeat: no-repeat;
-              background-size: 10% 100%, 10% 100%, 100% 10%, 100% 10%;
-              animation: waterflow 5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-              filter: blur(8px);
+              border: 5px solid rgba(0, 242, 254, 0.85);
+              box-shadow: 
+                inset 0 0 20px rgba(0, 242, 254, 0.6),
+                0 0 20px rgba(0, 242, 254, 0.6);
+              animation: neonPulse 2s ease-in-out infinite alternate;
             }
 
-            @keyframes waterflow {
-              0%, 100% {
-                background-image:
-                  linear-gradient(to right, rgba(30, 144, 255, 0.4), transparent 50%),
-                  linear-gradient(to left, rgba(30, 144, 255, 0.4), transparent 50%),
-                  linear-gradient(to bottom, rgba(30, 144, 255, 0.4), transparent 50%),
-                  linear-gradient(to top, rgba(30, 144, 255, 0.4), transparent 50%);
-                transform: scale(1);
+            @keyframes neonPulse {
+              0% {
+                border-color: rgba(0, 242, 254, 0.45);
+                box-shadow: 
+                  inset 0 0 12px rgba(0, 242, 254, 0.35),
+                  0 0 12px rgba(0, 242, 254, 0.35);
               }
-              25% {
-                background-image:
-                  linear-gradient(to right, rgba(30, 144, 255, 0.39), transparent 52%),
-                  linear-gradient(to left, rgba(30, 144, 255, 0.39), transparent 52%),
-                  linear-gradient(to bottom, rgba(30, 144, 255, 0.39), transparent 52%),
-                  linear-gradient(to top, rgba(30, 144, 255, 0.39), transparent 52%);
-                transform: scale(1.03);
-              }
-              50% {
-                background-image:
-                  linear-gradient(to right, rgba(30, 144, 255, 0.38), transparent 55%),
-                  linear-gradient(to left, rgba(30, 144, 255, 0.38), transparent 55%),
-                  linear-gradient(to bottom, rgba(30, 144, 255, 0.38), transparent 55%),
-                  linear-gradient(to top, rgba(30, 144, 255, 0.38), transparent 55%);
-                transform: scale(1.05);
-              }
-              75% {
-                background-image:
-                  linear-gradient(to right, rgba(30, 144, 255, 0.39), transparent 52%),
-                  linear-gradient(to left, rgba(30, 144, 255, 0.39), transparent 52%),
-                  linear-gradient(to bottom, rgba(30, 144, 255, 0.39), transparent 52%),
-                  linear-gradient(to top, rgba(30, 144, 255, 0.39), transparent 52%);
-                transform: scale(1.03);
+              100% {
+                border-color: rgba(0, 242, 254, 0.95);
+                box-shadow: 
+                  inset 0 0 28px rgba(0, 242, 254, 0.85),
+                  0 0 28px rgba(0, 242, 254, 0.85);
               }
             }
           </style>
         </head>
-        <body></body>
+        <body>
+          <div class="neon-border"></div>
+        </body>
       </html>
     `);
   }

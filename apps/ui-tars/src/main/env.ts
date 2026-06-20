@@ -8,7 +8,13 @@ import fs from 'node:fs';
 
 import dotenv from 'dotenv';
 
-dotenv.config();
+const envPath = path.resolve(process.cwd(), '../../.env');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  // Fallback for flat structures or production
+  dotenv.config();
+}
 
 export const mode = process.env.NODE_ENV;
 export const isProd = mode === 'production';
@@ -43,6 +49,10 @@ export const vertexVlmProjectId = process.env.VERTEX_VLM_PROJECT_ID || process.e
 export const vertexVlmLocation = process.env.VERTEX_VLM_LOCATION || process.env.VERTEX_LOCATION || 'us-central1';
 /** Gemini model name for GUI automation */
 export const vertexVlmModelName = process.env.VERTEX_VLM_MODEL_NAME || 'gemini-2.5-flash';
+
+// ── ElevenLabs TTS ────────────────────────────────────────────────────────────
+export const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+
 
 // ── GCP Credentials auto-detection ────────────────────────────────────────────
 // Searches for a service-account JSON file in well-known locations.

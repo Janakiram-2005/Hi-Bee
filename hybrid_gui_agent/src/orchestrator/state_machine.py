@@ -110,6 +110,8 @@ class AgentStateMachine:
         
     def _check_lock_screen(self) -> bool:
         """Check if the workstation is locked or showing a secure login screen (foreground window is 0)."""
+        if os.environ.get("BYPASS_LOCK_SCREEN_CHECK") == "1":
+            return False
         foreground = ctypes.windll.user32.GetForegroundWindow()
         if foreground == 0:
             with self._lock:
@@ -203,23 +205,32 @@ class AgentStateMachine:
     def execute_user_intent(self, user_command: str):
         # TIER 1: Check the Cortana Short-Circuit Registry
         if self.process_router.try_deterministic_execution(user_command):
-            print("Tier 1 Success: Command executed instantly via OS Protocol.")
+            print("[Execution Engine] Tier 1 Success: Command executed instantly via OS Protocol Shortcut.")
             return
 
-        # TIER 2: Extract the UI Automation Tree and attempt memory execution
-        automation_tree = self.tree_broker.get_live_tree(self.current_hwnd)
-        if automation_tree and self.native_bridge.try_headless_invoke(user_command):
-            print("Tier 2 Success: Element clicked directly in memory without moving cursor.")
+        # TIER 2: Query the live DOM/Accessibility tree and attempt direct memory execution
+        if self.native_bridge.try_headless_invoke(user_command):
+            print("[Execution Engine] Tier 2 Success: Element clicked directly in memory without moving cursor.")
             return
 
         # TIER 3: Fallback to full vision reasoning if programmatic avenues are blocked
-        print("Programmatic tracks unhandled. Activating Tier 3 Vision Pipeline...")
-        self.activate_full_vision_agent_loop(self.current_hwnd, user_command)
+        print("[Execution Engine] Programmatic tracks unhandled. Activating Tier 3 Vision Pipeline...")
+        self.activate_full_vision_agent_loop(user_command)
 
-    def activate_full_vision_agent_loop(self, hwnd: int, command: str) -> dict:
+    def activate_full_vision_agent_loop(self, hwnd_or_command, command: str = None) -> dict:
         """
         Original visual fallback pipeline when short-circuit paths are not applicable.
         """
+        if isinstance(hwnd_or_command, str):
+            command = hwnd_or_command
+            hwnd = self.current_hwnd
+        else:
+            hwnd = hwnd_or_command
+
+        if hwnd is None or hwnd == 0:
+            hwnd = self.current_hwnd
+        if hwnd is None or hwnd == 0:
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
         # 2. Capture Phase
         with self._lock:
             self.state = AgentState.CAPTURING

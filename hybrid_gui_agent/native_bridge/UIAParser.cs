@@ -286,7 +286,7 @@ namespace UIAutomationBridge
             }
         }
 
-        public static bool TryHeadlessInvoke(string targetElementIdOrName)
+        public static bool TryHeadlessInvoke(string targetAutomationIdOrName)
         {
             try
             {
@@ -296,7 +296,7 @@ namespace UIAutomationBridge
                     Console.WriteLine("{\"error\": \"No active foreground window found\", \"success\": false}");
                     return false;
                 }
-                return TryHeadlessInvoke(hwnd, targetElementIdOrName);
+                return TryHeadlessInvoke(hwnd, targetAutomationIdOrName);
             }
             catch (Exception ex)
             {
@@ -305,7 +305,7 @@ namespace UIAutomationBridge
             }
         }
 
-        public static bool TryHeadlessInvoke(IntPtr hwnd, string targetElementIdOrName)
+        public static bool TryHeadlessInvoke(IntPtr hwnd, string targetAutomationIdOrName)
         {
             try
             {
@@ -323,14 +323,14 @@ namespace UIAutomationBridge
                 }
 
                 Condition cond = new OrCondition(
-                    new PropertyCondition(AutomationElement.AutomationIdProperty, targetElementIdOrName),
-                    new PropertyCondition(AutomationElement.NameProperty, targetElementIdOrName)
+                    new PropertyCondition(AutomationElement.AutomationIdProperty, targetAutomationIdOrName),
+                    new PropertyCondition(AutomationElement.NameProperty, targetAutomationIdOrName)
                 );
 
                 AutomationElement target = root.FindFirst(TreeScope.Subtree, cond);
                 if (target == null)
                 {
-                    Console.WriteLine("{{\"error\": \"Element '{0}' not found\", \"success\": false}}", EscapeJsonString(targetElementIdOrName));
+                    Console.WriteLine("{{\"error\": \"Element '{0}' not found\", \"success\": false}}", EscapeJsonString(targetAutomationIdOrName));
                     return false;
                 }
 

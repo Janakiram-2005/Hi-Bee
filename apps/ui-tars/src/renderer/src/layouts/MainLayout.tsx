@@ -1,11 +1,23 @@
-import { Outlet } from 'react-router';
+import { Outlet, useNavigate } from 'react-router';
 import { AppSidebar } from '@/renderer/src/components/SideBar/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@renderer/components/ui/sidebar';
 import { useEffect } from 'react';
 import { useGlobalSettings } from '../components/Settings/global';
 
 export function MainLayout() {
+  const navigate = useNavigate();
   const openSettings = useGlobalSettings((state) => state.openSettings);
+
+  useEffect(() => {
+    const handler = () => {
+      navigate('/test-navigation');
+      sessionStorage.setItem('auto-start-test', 'true');
+    };
+    const unsubscribe = window.electron?.ipcRenderer?.on('test-navigation:start', handler);
+    return () => {
+      unsubscribe?.();
+    };
+  }, [navigate]);
 
   useEffect(() => {
     /**
