@@ -1,7 +1,4 @@
 <div align="center">
-
-<img alt="Hi-Bee Icon" width="128" src="./apps/ui-tars/resources/icon.png">
-
 # 🤖 Hi-Bee — Autonomous Voice-Controlled Desktop AI Agent
 
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
