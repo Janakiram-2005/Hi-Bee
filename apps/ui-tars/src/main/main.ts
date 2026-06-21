@@ -40,9 +40,11 @@ import { registerSettingsHandlers } from './services/settings';
 import { sanitizeState } from './utils/sanitizeState';
 import { stopActiveAgentRun } from './services/stopAgentRun';
 import { windowManager } from './services/windowManager';
+import { registerSystemHandlers } from './ipcRoutes/system';
 import { checkBrowserAvailability } from './services/browserCheck';
 import { mongoService } from './services/mongoService';
 import { startStatusServer, stopStatusServer } from './services/statusServer';
+import { startExtensionServer, stopExtensionServer } from './services/extensionServer';
 
 const { isProd } = env;
 
@@ -141,6 +143,7 @@ const initializeApp = async () => {
 
   // Start local status server for Python assistant events
   startStatusServer();
+  startExtensionServer();
 
   // Helper to register global shortcuts with fallback and error logging
   const registerWithFallback = (primary: string, fallback: string, callback: () => void) => {
@@ -298,6 +301,7 @@ const initializeApp = async () => {
     globalShortcut.unregisterAll();
     mongoService.disconnect().catch(() => {});
     stopStatusServer();
+    stopExtensionServer();
     const windows = BrowserWindow.getAllWindows();
     windows.forEach((window) => window.destroy());
   });
@@ -427,6 +431,37 @@ const registerIPCHandlers = (
     windowManager.broadcast('voice:open-settings-ui', null);
   });
 
+  ipcMain.handle('voice:manage-gestures', () => {
+    showMainWindow();
+    windowManager.broadcast('voice:open-gestures-ui', null);
+  });
+
+  const fs = require('fs');
+  const path = require('path');
+  const GESTURE_FILE = path.join(app.getPath('userData'), 'gestures.json');
+
+  ipcMain.handle('gesture:load', () => {
+    try {
+      if (fs.existsSync(GESTURE_FILE)) {
+        return JSON.parse(fs.readFileSync(GESTURE_FILE, 'utf-8'));
+      }
+    } catch (e) {
+      console.error('Failed to load gestures', e);
+    }
+    return [];
+  });
+
+  ipcMain.handle('gesture:save', (_, gestures) => {
+    try {
+      fs.writeFileSync(GESTURE_FILE, JSON.stringify(gestures, null, 2));
+      windowManager.broadcast('gesture:updated', null);
+      return true;
+    } catch (e) {
+      console.error('Failed to save gestures', e);
+      return false;
+    }
+  });
+
   ipcMain.handle('voice:show-main-window', () => {
     logger.info('[main] Showing main window for microphone permission request');
     showMainWindow();
@@ -449,6 +484,9 @@ const registerIPCHandlers = (
   });
 
   registerSettingsHandlers();
+  
+  registerSystemHandlers();
+  
   // register ipc services routes
   registerIpcMain(ipcRoutes);
 

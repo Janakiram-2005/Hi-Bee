@@ -20,6 +20,7 @@ import { api } from '@renderer/api';
 import { RobotAvatar } from './RobotAvatar';
 import { VoicePanel } from './VoicePanel';
 import { VoicePermissionGate } from './VoicePermissionGate';
+import { VisionWakePanel } from './VisionWakePanel';
 import { Resizable } from 're-resizable';
 
 import './VoiceAvatar.css';
@@ -496,6 +497,63 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   // ─── Auto-restart listening after speaking completes (hotkey mode only) ──
   // For phrase/live_agent modes, useCloudSTT manages the restart loop internally.
   const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  const [pendingGesture, setPendingGesture] = useState<any>(null);
+  const [showVisionPanel, setShowVisionPanel] = useState(false);
+
+  // ─── Listen for gesture triggers from local python engine ───────────────
+  useEffect(() => {
+    const handler = (_event: any, payload: any) => {
+      console.log('[Gesture]', payload.action, payload.actionArg);
+      if (payload.action === 'start_listening') {
+        if (!isListening?.()) {
+          api.logFromRenderer({ message: `[VoiceWidget] Gesture triggered start_listening` }).catch(() => {});
+          startListening();
+        }
+      } else if (payload.action === 'start_task') {
+        if (settings?.googleApiSource === 'agent_builder') {
+          window.electron.ipcRenderer.invoke('hibee-agent:toggle').catch(() => {});
+        } else {
+          toggleExpanded();
+        }
+      } else if (payload.action) {
+        // volume_up, volume_down, play_pause, open_app
+        window.electron.ipcRenderer.invoke('system:action', { 
+          action: payload.action, 
+          arg: payload.actionArg 
+        }).catch(() => {});
+      }
+    };
+    
+    const unsubscribe = window.electron?.ipcRenderer?.on('vision-gesture' as any, handler);
+
+    const localWakeHandler = () => {
+      if (!isListening?.()) {
+        api.logFromRenderer({ message: `[VoiceWidget] Frontend Vision wake triggered` }).catch(() => {});
+        startListening();
+      }
+    };
+    window.addEventListener('vision:wake-triggered', localWakeHandler);
+
+    const localGestureHandler = (e: CustomEvent) => {
+      const g = e.detail;
+      if (g.action === 'start_task') {
+        setPendingGesture(g);
+      } else if (g.action === 'start_listening') {
+        if (!isListening?.()) startListening();
+      } else if (g.action) {
+        window.electron.ipcRenderer.invoke('system:action', { action: g.action, arg: g.actionArg }).catch(() => {});
+      }
+    };
+    window.addEventListener('vision:gesture-triggered', localGestureHandler as EventListener);
+
+    return () => {
+      unsubscribe?.();
+      window.removeEventListener('vision:wake-triggered', localWakeHandler);
+      window.removeEventListener('vision:gesture-triggered', localGestureHandler as EventListener);
+    };
+  }, [startListening, isListening, settings?.googleApiSource, toggleExpanded]);
+
   useEffect(() => {
     if (inputMode === 'text') return;
     const mode = settings?.voiceWakeupMode ?? 'hotkey';
@@ -598,6 +656,50 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
           </div>
         )}
 
+        {/* Gesture Confirmation Modal */}
+        {pendingGesture && (
+          <div className="gesture-confirmation-modal" style={{ position: 'absolute', top: '-100px', right: 0, width: '280px', background: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(12px)', border: '1px solid #3b82f6', borderRadius: '12px', padding: '16px', color: 'white', zIndex: 999, boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#4ade80' }}>✋ Gesture Detected</span>
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#cbd5e1' }}>
+              Execute task linked to <strong>{pendingGesture.name}</strong>:
+              <br />
+              <span style={{ color: '#60a5fa' }}>"{pendingGesture.actionArg}"</span> ?
+            </p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button 
+                style={{ padding: '6px 12px', borderRadius: '6px', background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', cursor: 'pointer', fontSize: '12px' }}
+                onClick={() => setPendingGesture(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                style={{ padding: '6px 12px', borderRadius: '6px', background: '#3b82f6', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                onClick={() => {
+                  handleCommit(pendingGesture.actionArg);
+                  setPendingGesture(null);
+                }}
+              >
+                Execute
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Vision Wake Panel */}
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '84px', 
+          right: isExpanded ? '360px' : '0', 
+          zIndex: 99, 
+          transition: 'right 0.3s, opacity 0.3s',
+          opacity: (isExpanded && showVisionPanel) ? 1 : 0,
+          pointerEvents: (isExpanded && showVisionPanel) ? 'auto' : 'none'
+        }}>
+          <VisionWakePanel />
+        </div>
+
         {/* Expanded panel (renders above orb) */}
         <Resizable
           style={{
@@ -644,6 +746,8 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
             onSendText={handleCommit}
             onReset={handleReset}
             isHeightAuto={panelSize.height === 'auto'}
+            showVisionPanel={showVisionPanel}
+            onToggleVisionPanel={() => setShowVisionPanel(prev => !prev)}
           />
         </Resizable>
 

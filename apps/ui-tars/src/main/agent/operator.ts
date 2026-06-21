@@ -136,7 +136,7 @@ export class NutJSElectronOperator extends NutJSOperator {
         return resolve([]);
       }
 
-      execFile(parserExePath, [], { timeout: 2000 }, (error, stdout) => {
+      execFile(parserExePath, [], { timeout: 10000 }, (error, stdout) => {
         if (error) {
           logger.error(`[DOM-First] UIAParser error: ${error.message}`);
           return resolve([]);

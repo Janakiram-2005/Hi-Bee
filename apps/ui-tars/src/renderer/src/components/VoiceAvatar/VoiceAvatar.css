@@ -700,6 +700,7 @@
   transform-origin: bottom right;
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   z-index: 100;
+  pointer-events: none;
 }
 
 .speech-bubble.fading-out {
@@ -1040,3 +1041,40 @@
   transform: scale(1.3);
 }
 
+/* ── Switch Component ───────────────────────────────────────────────────── */
+.vision-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+.vision-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.vision-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(255, 255, 255, 0.2);
+  transition: .4s;
+  border-radius: 34px;
+}
+.vision-slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+input:checked + .vision-slider {
+  background-color: #0ea5e9;
+}
+input:checked + .vision-slider:before {
+  transform: translateX(18px);
+}

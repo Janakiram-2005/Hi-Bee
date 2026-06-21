@@ -19,6 +19,8 @@ import * as env from '@main/env';
 let cachedToken: string | null = null;
 let tokenExpiry = 0;
 
+import { GoogleAuth } from 'google-auth-library';
+
 export async function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (cachedToken && now < tokenExpiry - 60_000) return cachedToken;
@@ -28,7 +30,6 @@ export async function getAccessToken(): Promise<string> {
     process.env.GOOGLE_APPLICATION_CREDENTIALS = settings.vertexServiceAccountPath;
   }
 
-  const { GoogleAuth } = await import('google-auth-library');
   const auth = new GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/cloud-platform'],
   });

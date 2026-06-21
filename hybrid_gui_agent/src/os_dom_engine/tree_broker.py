@@ -67,7 +67,7 @@ class TreeBroker:
                 startupinfo=startupinfo
             )
             
-            stdout, stderr = proc.communicate(timeout=2.0)
+            stdout, stderr = proc.communicate(timeout=10.0)
             
             if proc.returncode != 0:
                 # Check if it was a window mutation detection reject
@@ -103,7 +103,7 @@ class TreeBroker:
         except subprocess.TimeoutExpired:
             proc.kill()
             stdout, stderr = proc.communicate()
-            print("[ERROR] UIAParser timed out during scan.")
+            print("[ERROR] UIAParser timed out during scan. The DOM tree might be too large.")
             return None
         except Exception as e:
             print(f"[ERROR] TreeBroker failed: {e}")
@@ -131,13 +131,16 @@ class TreeBroker:
                 text=True,
                 startupinfo=startupinfo
             )
-            stdout, stderr = proc.communicate(timeout=2.0)
+            stdout, stderr = proc.communicate(timeout=5.0)
             
             if proc.returncode != 0:
                 print(f"[ERROR] UIAParser invoke failed. Stderr: {stderr}")
                 return {"success": False, "error": stderr.strip() or "Process exited with error"}
 
             return json.loads(stdout.strip())
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return {"success": False, "error": "Invoke timed out."}
         except Exception as e:
             print(f"[ERROR] TreeBroker invoke failed: {e}")
             return {"success": False, "error": str(e)}

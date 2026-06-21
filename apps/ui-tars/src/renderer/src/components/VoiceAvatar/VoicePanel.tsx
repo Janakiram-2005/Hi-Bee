@@ -6,7 +6,7 @@
  * live transcript, language/voice selector, and Task KB viewer.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { Mic, MicOff, VolumeX, Volume2, ExternalLink, ChevronDown, ChevronUp, X, Power, Send, Bot, Square, Settings, Play, Pause, RotateCcw, Eye, EyeOff, Video } from 'lucide-react';
 import { useVoiceStore } from '@renderer/store/voiceStore';
 import { RobotAvatar } from './RobotAvatar';
 import { api } from '@renderer/api';
@@ -58,6 +58,8 @@ interface VoicePanelProps {
   onReset: () => void;
   onHeightReset?: () => void;
   isHeightAuto?: boolean;
+  showVisionPanel?: boolean;
+  onToggleVisionPanel?: () => void;
   style?: React.CSSProperties;
 }
 
@@ -73,6 +75,8 @@ export function VoicePanel({
   onReset,
   onHeightReset,
   isHeightAuto = true,
+  showVisionPanel = false,
+  onToggleVisionPanel,
   style,
 }: VoicePanelProps) {
   const { settings, updateSetting } = useSetting();
@@ -376,6 +380,17 @@ export function VoicePanel({
                 title="Wake Phrase"
               />
             )}
+            <button
+              type="button"
+              className="voice-ctrl-btn"
+              onClick={() => {
+                window.electron.ipcRenderer.invoke('voice:manage-gestures').catch(() => {});
+              }}
+              title="Manage Gestures"
+              style={{ height: '32px', width: 'auto', padding: '0 12px', fontSize: '11px', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              ✋ Manage Gestures
+            </button>
           </div>
         </div>
       )}
@@ -430,6 +445,21 @@ export function VoicePanel({
             title="Reset/Clear memory and start fresh"
           >
             <RotateCcw size={16} strokeWidth={1} />
+          </button>
+
+          {/* Toggle Vision Panel Button */}
+          <button
+            type="button"
+            className={`voice-ctrl-btn ${showVisionPanel ? 'active' : ''}`}
+            onClick={onToggleVisionPanel}
+            title={showVisionPanel ? 'Hide Visual Engine' : 'Show Visual Engine'}
+            style={{
+              color: showVisionPanel ? '#38bdf8' : undefined,
+              borderColor: showVisionPanel ? '#7dd3fc' : undefined,
+              background: showVisionPanel ? 'rgba(56, 189, 248, 0.15)' : undefined,
+            }}
+          >
+            <Video size={16} strokeWidth={1} />
           </button>
 
           {/* TTS Play/Pause controls */}

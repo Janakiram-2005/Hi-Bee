@@ -274,6 +274,25 @@ const Home = () => {
               </Button>
             </CardFooter>
           </Card>
+          <Card className="w-[400px] py-5">
+            <CardHeader className="px-5">
+              <CardTitle>Gesture Management</CardTitle>
+              <CardDescription>
+                Configure custom hand gestures to trigger specific AI automation tasks locally on your machine.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-5 flex justify-center items-center h-[180px] bg-slate-50 dark:bg-slate-900 rounded-lg mx-5">
+              <div className="text-4xl">✋ 🤖</div>
+            </CardContent>
+            <CardFooter className="gap-3 px-5 flex justify-between mt-6">
+              <Button
+                onClick={() => navigate('/gestures')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Configure Gestures
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
         <LocalSettingsDialog
           isOpen={localConfig.open}

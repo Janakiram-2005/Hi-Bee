@@ -59,6 +59,7 @@
   "dependencies": {
     "@computer-use/node-mac-permissions": "2.2.2",
     "@google-cloud/vertexai": "^1.12.0",
+    "@mediapipe/tasks-vision": "^0.10.35",
     "@types/ws": "^8.18.1",
     "jose": "^6.0.11",
     "mongodb": "^7.2.0",

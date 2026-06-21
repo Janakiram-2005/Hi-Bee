@@ -11,6 +11,7 @@ import { browserRoute } from './browser';
 import { remoteResourceRouter } from './remoteResource';
 import { settingRoute } from './setting';
 import { voiceRoute } from './voice';
+import { visionRoute } from './vision';
 
 const t = initIpc.create();
 
@@ -23,6 +24,7 @@ export const ipcRoutes = t.router({
   ...browserRoute,
   ...settingRoute,
   ...voiceRoute,
+  ...visionRoute,
 });
 export type Router = typeof ipcRoutes;
 

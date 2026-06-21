@@ -66,6 +66,12 @@ export function MainLayout() {
     return () => { unsubscribe?.(); };
   }, [openSettings]);
 
+  useEffect(() => {
+    const handler = () => navigate('/gestures');
+    const unsubscribe = window.electron?.ipcRenderer?.on('voice:open-gestures-ui' as any, handler);
+    return () => { unsubscribe?.(); };
+  }, [navigate]);
+
   return (
     <SidebarProvider
       style={{ '--sidebar-width-icon': '72px' }}

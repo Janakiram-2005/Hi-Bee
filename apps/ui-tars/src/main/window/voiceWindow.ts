@@ -27,7 +27,7 @@ export function createVoiceWindow() {
 
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: scrWidth, height: scrHeight } = primaryDisplay.workArea;
-  const winWidth = 380;
+  const winWidth = 800;
   const winHeight = 650;
   const x = scrWidth - winWidth - 10;
   const y = scrHeight - winHeight - 10;

@@ -264,12 +264,60 @@ const LocalOperator = () => {
     );
   };
 
+  const [isExtensionConnected, setIsExtensionConnected] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // Check initial status
+    window.electron?.ipcRenderer?.invoke('isExtensionInstalled').then(setIsExtensionConnected).catch(console.error);
+
+    // Listen for connection changes
+    const handler = (_event, data: any) => {
+      if (data && typeof data.installed === 'boolean') {
+        setIsExtensionConnected(data.installed);
+      }
+    };
+    const unsubscribe = window.electron?.ipcRenderer?.on('extension:status' as any, handler);
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  const renderExtensionOnboarding = () => {
+    return (
+      <div className="mx-4 mt-4 p-4 bg-slate-800 rounded-lg border border-slate-700 shadow-lg flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-white flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            Gemini Extension Not Connected
+          </h3>
+          <p className="text-sm text-slate-400 mt-1">
+            Background DOM automation requires the companion extension. Enable Developer Mode in <code className="bg-slate-900 px-1 py-0.5 rounded text-blue-300">chrome://extensions/</code> and Load Unpacked.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="secondary" 
+            size="sm" 
+            className="whitespace-nowrap"
+            onClick={() => navigator.clipboard.writeText('c:\\Users\\msjan\\Desktop\\UI-TARS-desktop\\extension')}
+          >
+            Copy Extension Path
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex flex-col w-full h-full">
+    <div className="flex flex-col w-full h-full relative">
       <NavHeader
         title={state.operator}
         onBack={handleBack}
       ></NavHeader>
+      {isExtensionConnected === false && renderExtensionOnboarding()}
       <div className="px-5 pb-5 flex flex-1 gap-5">
         {/* Single full-width panel — Hi-Bee replaces the old right screenshot viewer */}
         <Card className="flex-1 px-0 py-4 gap-4 h-[calc(100vh-76px)]">
@@ -278,10 +326,15 @@ const LocalOperator = () => {
               variant="secondary"
               className="size-8"
             ></SidebarTrigger>
-            <Button variant="outline" size="sm" onClick={handleNewChat}>
-              <MessageCirclePlus />
-              New Chat
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => navigate('/gestures')}>
+                ✋ Gestures
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleNewChat}>
+                <MessageCirclePlus />
+                New Chat
+              </Button>
+            </div>
           </div>
           {renderChatList()}
           <ChatInput
