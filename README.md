@@ -55,6 +55,8 @@ Your Voice ──► Cloud STT ──► AI Brain (VLM) ──► Native Desktop
 | ↕️ **Smart Resizing** | Drag the panel to resize; the built-in chat history automatically expands to fill the space! |
 | ⚙️ **Live Settings** | Swap AI models, change TTS voices, or update API keys on the fly without restarting. |
 | 🔒 **Local Execution** | Hybrid Python/Node architecture ensures local, secure execution of OS-level commands. |
+| 🖐️ **Gesture Controls** | Trigger actions via webcam with hand and face gestures using local Mediapipe vision tasks. |
+| 🛡️ **DOM Validation** | Improved and robust DOM structure validation for higher interaction accuracy. |
 
 ---
 
