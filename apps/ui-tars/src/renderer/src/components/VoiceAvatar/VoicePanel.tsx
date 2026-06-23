@@ -30,20 +30,7 @@ const LANGUAGES = [
   { code: 'mr-IN', label: 'Marathi' },
   { code: 'gu-IN', label: 'Gujarati' },
   { code: 'pa-IN', label: 'Punjabi' },
-  // ── Global Languages ──
-  { code: 'zh-CN', label: 'Chinese (Simplified)' },
-  { code: 'zh-TW', label: 'Chinese (Traditional)' },
-  { code: 'ja-JP', label: 'Japanese' },
-  { code: 'ko-KR', label: 'Korean' },
-  { code: 'es-ES', label: 'Spanish (ES)' },
-  { code: 'es-MX', label: 'Spanish (MX)' },
-  { code: 'fr-FR', label: 'French' },
-  { code: 'de-DE', label: 'German' },
-  { code: 'pt-BR', label: 'Portuguese (BR)' },
-  { code: 'ar-SA', label: 'Arabic' },
-  { code: 'ru-RU', label: 'Russian' },
-  { code: 'tr-TR', label: 'Turkish' },
-  { code: 'it-IT', label: 'Italian' },
+  // ── Global Languages Removed per user request ──
 ];
 
 interface VoicePanelProps {
@@ -390,6 +377,17 @@ export function VoicePanel({
               style={{ height: '32px', width: 'auto', padding: '0 12px', fontSize: '11px', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.1)', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
               ✋ Manage Gestures
+            </button>
+            <button
+              type="button"
+              className="voice-ctrl-btn"
+              onClick={() => {
+                api.openExternal({ url: 'http://localhost:5175' }).catch(() => {});
+              }}
+              title="Open Live Translator Webpage"
+              style={{ height: '32px', width: 'auto', padding: '0 12px', fontSize: '11px', borderRadius: '16px', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(59, 130, 246, 0.4)', color: '#bfdbfe', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              🎥 Live Translator
             </button>
           </div>
         </div>

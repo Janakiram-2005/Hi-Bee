@@ -78,6 +78,41 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
         }
         return next;
       });
+
+      // Special handling for Gesture Sentences (sent from external UI)
+      if (event === 'hibee:gesture-sentence') {
+        const words = data?.words;
+        if (words && words.length > 0) {
+          (async () => {
+            try {
+              api.logFromRenderer({ message: `[VoiceWidget] Received gesture words for parsing: ${words.join(' ')}` }).catch(() => {});
+              // We need access to the selected language, but we can read it from the store or default to en-US
+              const lang = useVoiceStore.getState().selectedLanguage || 'en-US';
+              
+              // 1. Show the raw words in the chat as the user turn
+              useVoiceStore.getState().addTurn({ id: uuidv4(), role: 'user', text: `[Gestures] ${words.join(' ')}`, timestamp: Date.now() });
+              useVoiceStore.getState().setAvatarState('thinking');
+              
+              // 2. Call LLM to parse into grammatical sentence
+              const result = await api.parseGestureSentence({ words, language: lang });
+              const parsedText = result.text;
+              
+              // 3. Show AI response
+              useVoiceStore.getState().addTurn({ id: uuidv4(), role: 'assistant', text: parsedText, timestamp: Date.now() });
+              useVoiceStore.getState().setAvatarState('idle');
+              
+              // 4. Play audio using ElevenLabs
+              const { speak } = useVoiceStore.getState(); // Wait, speak is from useVoiceTTS, not store
+              // We can just set a flag or trigger a custom event that the hook can pick up, 
+              // OR we can dispatch an event to the window and listen to it in the component body
+              window.dispatchEvent(new CustomEvent('hibee:trigger-speak', { detail: parsedText }));
+            } catch (err) {
+              console.error('Failed to parse gesture sentence', err);
+              useVoiceStore.getState().setAvatarState('error');
+            }
+          })();
+        }
+      }
     };
     const unsubscribe = window.electron?.ipcRenderer?.on('hibee:pipeline-status', handler);
     return () => {
@@ -328,6 +363,16 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   // ─── TTS hook ────────────────────────────────────────────────────────────
   const { speak, stop: stopTTS, pause: pauseTTS, resume: resumeTTS } = useVoiceTTS();
 
+  useEffect(() => {
+    const speakListener = (e: CustomEvent) => {
+      if (e.detail) {
+        speak(e.detail);
+      }
+    };
+    window.addEventListener('hibee:trigger-speak', speakListener as EventListener);
+    return () => window.removeEventListener('hibee:trigger-speak', speakListener as EventListener);
+  }, [speak]);
+
   const handlePlayLast = useCallback(() => {
     const lastAssistantTurn = [...history].reverse().find((t) => t.role === 'assistant');
     if (lastAssistantTurn?.text) {
@@ -468,17 +513,22 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
 
   // ─── External Speak request listener (e.g. from Hi-Bee Agent window) ─────
   useEffect(() => {
-    const handler = (...args: unknown[]) => {
-      const text = args[0];
+    const handler = (_event: any, text: any) => {
       if (typeof text === 'string') {
         speak(text);
+        addTurn({
+          id: uuidv4(),
+          role: 'assistant',
+          text: text,
+          timestamp: Date.now(),
+        });
       }
     };
     const unsubscribe = window.electron?.ipcRenderer?.on('voice:speak-text', handler);
     return () => {
       unsubscribe?.();
     };
-  }, [speak]);
+  }, [speak, addTurn]);
 
   const startListeningRef = useRef(startListening);
   useEffect(() => {

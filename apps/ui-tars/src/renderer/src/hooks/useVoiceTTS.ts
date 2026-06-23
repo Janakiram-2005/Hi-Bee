@@ -17,33 +17,8 @@ import { useVoiceStore } from '@renderer/store/voiceStore';
 import { useSetting } from '@renderer/hooks/useSetting';
 import { api } from '@renderer/api';
 
-/** Detect language from Unicode script in text (only used as a fallback) */
-function detectLanguageFromScript(text: string, defaultLang: string): string {
-  if (/[\u0c00-\u0c7f]/.test(text)) return 'te-IN'; // Telugu
-  if (/[\u0900-\u097f]/.test(text)) return 'hi-IN'; // Hindi (Devanagari)
-  if (/[\u0b80-\u0bff]/.test(text)) return 'ta-IN'; // Tamil
-  if (/[\u0c80-\u0cff]/.test(text)) return 'kn-IN'; // Kannada
-  if (/[\u0d00-\u0d7f]/.test(text)) return 'ml-IN'; // Malayalam
-  if (/[\u0980-\u09ff]/.test(text)) return 'bn-IN'; // Bengali
-  if (/[\u0a80-\u0aff]/.test(text)) return 'gu-IN'; // Gujarati
-  if (/[\u0a00-\u0a7f]/.test(text)) return 'pa-IN'; // Punjabi
-  if (/[\u4e00-\u9fff]/.test(text)) return 'zh-CN'; // Chinese
-  if (/[\u3040-\u30ff\u31f0-\u31ff]/.test(text)) return 'ja-JP'; // Japanese
-  if (/[\uac00-\ud7af]/.test(text)) return 'ko-KR'; // Korean
-  return defaultLang;
-}
-
-/** Detect the effective language for TTS: prefer selectedLanguage, fall back to script detection */
-function detectLanguage(text: string, selectedLang: string): string {
-  // If the user selected a non-English language explicitly, use it
-  if (selectedLang && selectedLang !== 'en-US') {
-    // Check if text contains native script; if so, let script detection override
-    const scriptDetected = detectLanguageFromScript(text, selectedLang);
-    return scriptDetected;
-  }
-  // For English mode, only override if non-Latin script found
-  return detectLanguageFromScript(text, selectedLang);
-}
+// Removed detectLanguageFromScript and detectLanguage.
+// The TTS will now strictly use the selected language from the dropdown.
 
 export function useVoiceTTS() {
   const {
@@ -176,8 +151,8 @@ export function useVoiceTTS() {
         return;
       }
 
-      // Detect target language: prefer selectedLanguage, then Unicode fallback
-      const targetLang = detectLanguage(text, selectedLanguageRef.current);
+      // Always use the language explicitly selected in the dropdown
+      const targetLang = selectedLanguageRef.current || 'en-US';
 
       // Always try the primary Cloud TTS backend (ElevenLabs or Google) first
       const useCloudTts = true;

@@ -22,6 +22,16 @@ import { IMAGE_PLACEHOLDER } from '@ui-tars/shared/constants';
 import { UITarsModelVersion, MAX_PIXELS_V1_5 } from '@ui-tars/shared/types';
 
 import { logger } from '@main/logger';
+import Anthropic from '@anthropic-ai/sdk';
+
+// ─── Footprint Tracker State ───────────────────────────────────────────────────
+interface FailedClick {
+  x: number;
+  y: number;
+  missed: true;
+}
+let footprintHistory: FailedClick[] = [];
+let lastExecutedAction: { x: number, y: number, intent: string } | null = null;
 
 // ─── Types (mirrored from SDK to avoid needing a built SDK dist) ──────────────
 
@@ -430,8 +440,22 @@ export class GeminiVertexModel {
     const { conversations, images, screenContext, scaleFactor, uiTarsVersion } =
       params;
 
+    // Footprint Tracker: check if the screen changed since last time
+    const lastImage = images.length > 0 ? images[images.length - 1] : null;
+    const prevImage = images.length > 1 ? images[images.length - 2] : null;
+    
+    if (lastImage && prevImage && lastImage === prevImage) {
+      if (lastExecutedAction) {
+        footprintHistory.push({ x: lastExecutedAction.x, y: lastExecutedAction.y, missed: true });
+        logger.warn(`[FootprintTracker] Registered missed action at (${lastExecutedAction.x}, ${lastExecutedAction.y})`);
+      }
+    } else {
+      footprintHistory = [];
+      lastExecutedAction = null;
+    }
+
     logger.info(
-      `[GeminiVertexModel] invoke model=${this.cfg.modelName} ` +
+      `[Brain] Using Google Gemini for reasoning... invoke model=${this.cfg.modelName} ` +
         `screen=${JSON.stringify(screenContext)} images=${images.length}`,
     );
 
@@ -454,7 +478,92 @@ export class GeminiVertexModel {
       `[GeminiVertexModel] response costTime=${costTime}ms tokens=${costTokens} len=${text.length}`,
     );
 
-    const output = this.adapter.adapt(text, {
+    let finalPredictionText = text;
+
+    // Navigation Pipeline: Check if Gemini predicted a coordinate-based action
+    const isCoordinateAction = /(?:click|double_click|left_single|left_double|right_single|right_click|drag|hover)\s*\(.*?\)/.test(text);
+
+    if (isCoordinateAction) {
+      logger.info(`[Navigation] Using Claude for precise coordinate prediction...`);
+      
+      const anthropic = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
+      
+      // Extract intent from Gemini's Thought. Fallback to extracting everything before the action call if the Thought/Action block is missing.
+      let intent = "the target element";
+      const thoughtMatch = text.match(/Thought:\s*(.*?)\s*Action:/s);
+      if (thoughtMatch) {
+        intent = thoughtMatch[1].trim();
+      } else {
+        const fallbackMatch = text.match(/^(.*?)(?:click|double_click|left_single|left_double|right_single|right_click|drag|hover)\s*\(/s);
+        if (fallbackMatch && fallbackMatch[1].trim()) {
+          intent = fallbackMatch[1].trim();
+        } else {
+          intent = text.trim();
+        }
+      }
+      
+      let footprintPrompt = '';
+      if (footprintHistory.length > 0) {
+        footprintPrompt = `\n\nFOOTPRINT KNOWLEDGE: You have previously attempted to interact with this element but missed. Your previous failed attempts were at these (x,y) coordinates: ` +
+        footprintHistory.map(f => `(${f.x}, ${f.y})`).join(', ') + 
+        `. Please adjust your prediction to click a slightly different coordinate (e.g. if the element is above or below your previous attempt).`;
+      }
+
+      try {
+        const claudeResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1024,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/jpeg',
+                    data: lastImage?.replace(/^data:[^;]+;base64,/, '') || ''
+                  }
+                },
+                {
+                  type: 'text',
+                  text: `Based on this screenshot, find the precise x and y coordinates to execute the following intent:\n"${intent}"\n\nThe coordinates must be scaled between 0 and 1000 for both x and y, where (0,0) is top-left and (1000,1000) is bottom-right.${footprintPrompt}\n\nOutput ONLY the coordinates in the format: X, Y`
+                }
+              ]
+            }
+          ]
+        });
+        
+        const claudeText = claudeResponse.content[0].type === 'text' ? claudeResponse.content[0].text.trim() : '';
+        const coordsMatch = claudeText.match(/(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)/);
+        
+        if (coordsMatch) {
+          const x = parseFloat(coordsMatch[1]);
+          const y = parseFloat(coordsMatch[2]);
+          
+          // Match the action name from the original text (default to click)
+          const actionMatch = text.match(/([a-zA-Z_]+)\(.*?(?:start_box|point|end_box).*?\)/) || text.match(/([a-zA-Z_]+)\(.*?\)/);
+          const actionName = actionMatch ? actionMatch[1] : 'click';
+          
+          // Construct a completely clean and parseable Prediction string for UI-TARS
+          finalPredictionText = `Thought: ${intent}\nAction: ${actionName}(start_box='(${x},${y})')`;
+          
+          lastExecutedAction = { x, y, intent };
+          logger.info(`[Navigation] Claude predicted coordinates: (${x}, ${y}). Rewriting action from \n${text}\nto\n${finalPredictionText}`);
+        } else {
+          logger.warn(`[Navigation] Claude failed to return valid coordinates: ${claudeText}`);
+        }
+      } catch (e) {
+        logger.error(`[Navigation] Anthropic API failed: ${e}`);
+      }
+    } else {
+       // Reset footprints if it's not a coordinate action (e.g., type)
+       lastExecutedAction = null;
+    }
+
+    const output = this.adapter.adapt(finalPredictionText, {
       screenContext,
       scaleFactor,
       uiTarsVersion,

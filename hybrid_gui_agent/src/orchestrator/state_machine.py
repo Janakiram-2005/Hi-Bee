@@ -13,6 +13,7 @@ from vision_engine import CoordinateMapper, VisualHomingAgent
 from utils import BenchmarkTool
 from utils.screen_capture import ScreenCapture
 from orchestrator.vlm_client import VLMClient, clean_id_token
+from orchestrator.grounding_client import GroundingAgentClient
 
 class NativeBridge:
     def __init__(self, parser_exe_path: str, tree_broker):
@@ -98,6 +99,7 @@ class AgentStateMachine:
         self.state = AgentState.IDLE
         self.router = FallbackRouter(parser_exe_path, models_dir)
         self.vlm_client = VLMClient()
+        self.grounding_client = GroundingAgentClient()
         self.benchmark = BenchmarkTool()
         self.current_hwnd = None
         self.cached_rect_at_capture = None
@@ -251,6 +253,54 @@ class AgentStateMachine:
             return {"success": False, "error": f"Screen capture failed: {e}", "metrics": {}}
             
         self.benchmark.end_phase("Screen Capture")
+
+        # 2.5: Visual Grounding Phase (Tier 3A)
+        with self._lock:
+            self.state = AgentState.DECIDING
+            
+        self.benchmark.start_phase("Visual Grounding (Tier 3A)")
+        try:
+            print("[Execution Engine] Activating Tier 3A: Pure Visual Grounding...")
+            grounding_result = self.grounding_client.get_target_coordinates(command, screenshot_bytes)
+            if grounding_result and "point" in grounding_result:
+                pt = grounding_result["point"]
+                # Denormalize coordinates [0, 1000] -> physical pixels
+                h, w = screenshot_img.shape[:2]
+                final_x = int(pt[0] * w / 1000.0)
+                final_y = int(pt[1] * h / 1000.0)
+                
+                print(f"[Tier 3A Success] Visual Grounding matched normalized coordinate: ({final_x}, {final_y})")
+                self.benchmark.end_phase("Visual Grounding (Tier 3A)")
+                
+                # Directly execute visual click
+                with self._lock:
+                    self.state = AgentState.EXECUTING
+                
+                focus_window(hwnd)
+                time.sleep(0.1)
+                
+                anchor_pt = (final_x, final_y)
+                final_x, final_y = self.execute_precision_click(
+                    initial_target_x=final_x,
+                    initial_target_y=final_y,
+                    element_intent_label=command,
+                    anchor_pt=anchor_pt
+                )
+                
+                with self._lock:
+                    self.state = AgentState.IDLE
+                    
+                self.benchmark.print_dashboard()
+                
+                return {
+                    "success": True,
+                    "target_coordinate": [final_x, final_y],
+                    "metrics": self.benchmark.get_metrics()
+                }
+        except Exception as e:
+            print(f"[Tier 3A Failed] Grounding Agent failed or skipped: {e}. Falling back to Tier 3B...")
+        self.benchmark.end_phase("Visual Grounding (Tier 3A)")
+
 
         # 3. DOM / Visual Layout Scan Phase
         with self._lock:

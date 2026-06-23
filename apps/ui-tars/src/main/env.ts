@@ -50,8 +50,9 @@ export const vertexVlmLocation = process.env.VERTEX_VLM_LOCATION || process.env.
 /** Gemini model name for GUI automation */
 export const vertexVlmModelName = process.env.VERTEX_VLM_MODEL_NAME || 'gemini-2.5-flash';
 
-// ── ElevenLabs TTS ────────────────────────────────────────────────────────────
-export const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+// ── Azure TTS ──────────────────────────────────────────────────────────────────
+export const azureSpeechKey = process.env.AZURE_SPEECH_KEY;
+export const azureSpeechRegion = process.env.AZURE_SPEECH_REGION;
 
 
 // ── GCP Credentials auto-detection ────────────────────────────────────────────

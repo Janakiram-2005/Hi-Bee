@@ -542,8 +542,8 @@ export function useCloudSTT({
       const bufferLength = analyser.fftSize;
       const dataArray = new Float32Array(bufferLength);
       let silenceSamplesCount = 0;
-      // Live agent uses 4s gap, others use configured silenceMs
-      const currentSilenceMs = (isBackground && voiceWakeupModeRef.current === 'live_agent') ? 4000 : silenceMs;
+      // Live agent uses 2.5s gap, others use configured silenceMs
+      const currentSilenceMs = (isBackground && voiceWakeupModeRef.current === 'live_agent') ? 2500 : silenceMs;
       const samplesNeededForSilence = currentSilenceMs / 100;
       const samplesNeededForTimeout = 12000 / 100; // 12s max if no speech at all
       let hasSpoken = false;
@@ -562,11 +562,10 @@ export function useCloudSTT({
         const rms = Math.sqrt(sumSquares / bufferLength);
         
         // VAD threshold optimized for standard background noise:
-        // - Older threshold (0.015) was causing misses for quieter or slightly distant speech.
-        // - Newer threshold (0.010) is more forgiving.
+        // - Older threshold (0.010) was too sensitive, causing infinite listening loops.
+        // - Newer threshold (0.015) is more balanced for typical environments.
         // - To convert RMS to Decibels: dB = 20 * Math.log10(rms). 
-        //   An RMS of 0.010 corresponds to approximately -40dB amplitude.
-        const speechThreshold = 0.010;
+        const speechThreshold = 0.015;
 
         // If the avatar is speaking, we ignore VAD checks entirely to prevent echo self-interruption.
         // We rely on the sync useEffect to stop listening, but in case of a race condition before

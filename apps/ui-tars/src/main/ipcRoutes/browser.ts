@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { initIpc } from '@ui-tars/electron-ipc/main';
+import { shell } from 'electron';
 import { checkBrowserAvailability } from '../services/browserCheck';
 import { isExtensionInstalled, sendExtensionCommand } from '../services/extensionServer';
 
@@ -17,5 +18,9 @@ export const browserRoute = t.router({
   }),
   sendExtensionCommand: t.procedure.input<string>().handle(async ({ input }) => {
     return await sendExtensionCommand(input);
+  }),
+  openExternal: t.procedure.input<{url: string}>().handle(async ({ input }) => {
+    await shell.openExternal(input.url);
+    return true;
   })
 });

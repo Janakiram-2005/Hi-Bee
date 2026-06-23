@@ -94,6 +94,19 @@ export const voiceRoute = t.router({
     }),
 
   // ─── Main chat endpoint ────────────────────────────────────────────────────
+  parseGestureSentence: t.procedure
+    .input<{ words: string[]; language: string }>()
+    .handle(async ({ input }) => {
+      try {
+        const prompt = `You are a sign language translator. Convert these gathered sign language words into a single proper grammatical sentence: ${input.words.join(', ')}. Only output the final sentence. Translate it to the language code: ${input.language}.`;
+        const result = await vertexChat(prompt, [], input.language);
+        return { text: result.text.trim() };
+      } catch (err) {
+        logger.warn('[voiceRoute] parseGestureSentence failed:', err);
+        return { text: input.words.join(' ') };
+      }
+    }),
+
   voiceChat: t.procedure
     .input<{
       transcript: string;
@@ -392,6 +405,103 @@ export const voiceRoute = t.router({
       } catch (err) {
         logger.warn('[voiceRoute] sendPipelineStatus failed:', err);
         return { ok: false };
+      }
+    }),
+
+  // ─── Sign Language Translation Refinement & Routing ─────────────────────────
+  processGestures: t.procedure
+    .input<{
+      rawSigns: string[];
+      language: string;
+      runInBackground?: boolean;
+    }>()
+    .handle(async ({ input }) => {
+      const { rawSigns, language, runInBackground } = input;
+      if (!rawSigns || rawSigns.length === 0) return { error: 'Empty signs' };
+
+      logger.info(`[processGestures] Refining signs: ${rawSigns.join(', ')}`);
+
+      try {
+        const prompt = [
+          'You are an expert sign-language interpreter.',
+          '1. Take these raw translated signs and refine them into a natural, grammatically correct English sentence.',
+          '2. Determine if the user is giving a computer COMMAND/TASK (e.g., "Open browser", "Search YouTube") or just making a conversational STATEMENT (e.g., "I love you", "The sun is yellow").',
+          'Output strictly in this JSON format:',
+          '{',
+          '  "refined_sentence": "<the natural sentence>",',
+          '  "intent": "STATEMENT" | "TASK"',
+          '}',
+          '',
+          `Raw Signs: ${JSON.stringify(rawSigns)}`
+        ].join('\n');
+
+        const result = await vertexChat(prompt, [], 'en-US');
+        const raw = result.text.trim();
+        logger.info(`[processGestures] LLM Response: "${raw}"`);
+
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('Failed to parse JSON from LLM response');
+        }
+
+        const parsed = JSON.parse(jsonMatch[0]) as {
+          refined_sentence: string;
+          intent: 'STATEMENT' | 'TASK';
+        };
+
+        const { refined_sentence, intent } = parsed;
+
+        if (intent === 'STATEMENT') {
+          // Speak it out loud
+          // We use TTSFactory (which uses Azure TTS now)
+          windowManager.broadcast('voice:gesture-statement', { text: refined_sentence });
+          
+          await TTSFactory.synthesizeSpeech({
+            text: refined_sentence,
+            languageCode: language || 'en-US',
+          }).then(async (ttsResult) => {
+             // For audio playback to happen automatically, we'd typically need the renderer to play it.
+             // We can broadcast the base64 audio to the renderer to play it.
+             if (ttsResult.audioContent) {
+               windowManager.broadcast('voice:play-audio', { 
+                 audioContent: ttsResult.audioContent,
+                 text: refined_sentence
+               });
+             }
+          });
+
+        } else if (intent === 'TASK') {
+          // Route to Agentic Task Executor
+          const { store } = await import('@main/store/create');
+          const { runAgent } = await import('@main/services/runAgent');
+
+          stopActiveAgentRun();
+
+          store.setState({
+            instructions: refined_sentence,
+            abortController: new AbortController(),
+            thinking: true,
+            errorMsg: null,
+          });
+
+          windowManager.broadcast('voice:gesture-task', { text: refined_sentence });
+
+          runAgent(store.setState, store.getState, Operator.LocalComputer, {
+            background: runInBackground ?? false,
+          })
+            .then(() => {
+              store.setState({ thinking: false });
+            })
+            .catch((err) => {
+              logger.error('[processGestures] TASK runAgent failed:', err);
+              store.setState({ thinking: false });
+            });
+        }
+
+        return { success: true, refined_sentence, intent };
+      } catch (err) {
+        logger.error('[processGestures] Failed:', err);
+        return { error: String(err) };
       }
     }),
 });

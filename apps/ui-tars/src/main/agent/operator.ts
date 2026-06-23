@@ -179,6 +179,14 @@ export class NutJSElectronOperator extends NutJSOperator {
         await sleep(250); // Wait for the OS to repaint the screen fully
       }
 
+      // Park the mouse pointer at the top-left corner to prevent hover tooltips from occluding elements in the screenshot
+      try {
+        await mouse.setPosition(new Point(0, 0));
+        await sleep(50); // Wait for tooltips to disappear
+      } catch (err) {
+        logger.warn('[screenshot] Failed to park mouse pointer:', err);
+      }
+
       const {
         physicalSize,
         logicalSize,

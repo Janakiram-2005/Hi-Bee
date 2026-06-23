@@ -8,6 +8,7 @@ import json
 import sys
 import base64
 import os
+import math
 
 HAND_CONNECTIONS = frozenset([
   (0, 1), (1, 2), (2, 3), (3, 4),
@@ -24,8 +25,8 @@ def process_vision():
     base_options_face = python.BaseOptions(model_asset_path=os.path.join(script_dir, 'face_landmarker.task'))
     options_face = vision.FaceLandmarkerOptions(
         base_options=base_options_face,
-        output_face_blendshapes=False,
-        output_facial_transformation_matrixes=False,
+        output_face_blendshapes=True,
+        output_facial_transformation_matrixes=True,
         num_faces=1,
     )
     face_mesh = vision.FaceLandmarker.create_from_options(options_face)
@@ -51,6 +52,8 @@ def process_vision():
 
     gaze_start_time = None
     gesture_states = {} # Tracks held time for gestures
+    blink_history = []
+    head_history = []
 
     gesture_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     
@@ -80,10 +83,11 @@ def process_vision():
             "pinky": "open" if pinky_open else "closed"
         }
 
-    def detect_gestures(hand_landmarks, custom_gestures):
+    def detect_hand_gestures(hand_landmarks, custom_gestures):
         states = get_finger_states(hand_landmarks)
         matched = []
         for g in custom_gestures:
+            if g.get('type', 'hand') != 'hand': continue
             match = True
             for finger, req_state in g.get('fingers', {}).items():
                 if req_state != 'any' and states.get(finger) != req_state:
@@ -92,6 +96,68 @@ def process_vision():
             if match:
                 matched.append(g)
         return matched, states
+        
+    def detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now):
+        matched = []
+        
+        # Determine current blinks
+        # Use simple thresholding on blendshape scores
+        is_blink_left = blink_left > 0.45
+        is_blink_right = blink_right > 0.45
+        
+        nonlocal blink_history
+        # Record blink event (debounce by checking last entry)
+        if is_blink_left or is_blink_right:
+            if not blink_history or now - blink_history[-1]['time'] > 0.3:
+                blink_history.append({'time': now, 'left': is_blink_left, 'right': is_blink_right})
+                
+        # Clean old blinks (> 1.5s)
+        blink_history = [b for b in blink_history if now - b['time'] < 1.5]
+        
+        nonlocal head_history
+        head_history.append({'time': now, 'pitch': pitch, 'yaw': yaw})
+        head_history = [h for h in head_history if now - h['time'] < 1.5]
+        
+        # Calculate max deltas for head
+        pitches = [h['pitch'] for h in head_history]
+        yaws = [h['yaw'] for h in head_history]
+        pitch_delta = max(pitches) - min(pitches) if pitches else 0
+        yaw_delta = max(yaws) - min(yaws) if yaws else 0
+        
+        is_nod = pitch_delta > 15.0 and yaw_delta < 12.0
+        is_shake = yaw_delta > 15.0 and pitch_delta < 12.0
+        
+        # Check double blink (2 distinct blinks within 1.5s where both eyes blinked)
+        full_blinks = [b for b in blink_history if b['left'] and b['right']]
+        is_double_blink = len(full_blinks) >= 2
+        
+        # Check winks
+        winks_left = [b for b in blink_history if b['left'] and not b['right']]
+        winks_right = [b for b in blink_history if not b['left'] and b['right']]
+        
+        for g in custom_gestures:
+            t = g.get('type', 'hand')
+            if t == 'eye':
+                ea = g.get('eyeAction')
+                if ea == 'double_blink' and is_double_blink:
+                    matched.append(g)
+                elif ea == 'wink_left' and len(winks_left) > 0:
+                    matched.append(g)
+                elif ea == 'wink_right' and len(winks_right) > 0:
+                    matched.append(g)
+            elif t == 'head':
+                ha = g.get('headAction')
+                if ha == 'nod' and is_nod:
+                    matched.append(g)
+                elif ha == 'shake' and is_shake:
+                    matched.append(g)
+                    
+        # If we matched an eye or head gesture, we clear the history to avoid spam
+        if any(g.get('type') in ['eye', 'head'] for g in matched):
+            blink_history.clear()
+            head_history.clear()
+            
+        return matched
 
     try:
         while True:
@@ -121,6 +187,11 @@ def process_vision():
                 "hands": []
             }
 
+            current_gestures = []
+            
+            # Load gestures dynamically
+            custom_gestures = load_gestures()
+            
             if results_face.face_landmarks:
                 payload["face_found"] = True
                 face_landmarks = results_face.face_landmarks[0]
@@ -153,15 +224,41 @@ def process_vision():
                     "max_y": max(ys)
                 }
                 
-                # Send a subset of face points for drawing blue dots (e.g. outline and eyes)
+                # Send a subset of face points for drawing blue dots
                 downsampled = [{"x": lm.x, "y": lm.y} for i, lm in enumerate(face_landmarks) if i % 10 == 0]
                 payload["face_mesh_points"] = downsampled
+                
+                # Extract blendshapes for blink detection
+                blink_left = 0.0
+                blink_right = 0.0
+                if results_face.face_blendshapes:
+                    for cat in results_face.face_blendshapes[0]:
+                        if cat.category_name == 'eyeBlinkLeft': blink_left = cat.score
+                        if cat.category_name == 'eyeBlinkRight': blink_right = cat.score
+                        
+                # Extract head pose
+                pitch, yaw = 0.0, 0.0
+                if results_face.facial_transformation_matrixes:
+                    matrix = results_face.facial_transformation_matrixes[0]
+                    sy = math.sqrt(matrix[0,0]**2 + matrix[1,0]**2)
+                    if sy > 1e-6:
+                        pitch = math.atan2(matrix[2,1], matrix[2,2]) * 180.0 / math.pi
+                        yaw = math.atan2(-matrix[2,0], sy) * 180.0 / math.pi
+                    else:
+                        pitch = math.atan2(-matrix[1,2], matrix[1,1]) * 180.0 / math.pi
+                        yaw = math.atan2(-matrix[2,0], sy) * 180.0 / math.pi
+                        
+                # Detect Face Gestures (Eye/Head)
+                now_t = time.time()
+                face_matched = detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now_t)
+                for mg in face_matched:
+                    current_gestures.append(mg)
                 
                 # Gaze holding logic
                 if TARGET_MIN <= relative_position <= TARGET_MAX:
                     if gaze_start_time is None:
-                        gaze_start_time = time.time()
-                    elif time.time() - gaze_start_time >= HOLD_TIME_REQUIRED:
+                        gaze_start_time = now_t
+                    elif now_t - gaze_start_time >= HOLD_TIME_REQUIRED:
                         print(json.dumps({"type": "vision-wake"}))
                         sys.stdout.flush()
                         gaze_start_time = None
@@ -169,16 +266,11 @@ def process_vision():
                     gaze_start_time = None
             else:
                 gaze_start_time = None
-
-            current_gestures = []
-            
-            # Load gestures dynamically
-            custom_gestures = load_gestures()
             
             if results_hands.hand_landmarks:
                 for hand_landmarks in results_hands.hand_landmarks:
                     pts = [{"x": lm.x, "y": lm.y} for lm in hand_landmarks]
-                    matched_gestures, states = detect_gestures(hand_landmarks, custom_gestures)
+                    matched_gestures, states = detect_hand_gestures(hand_landmarks, custom_gestures)
                     
                     # We just take the first matched gesture name for display purposes
                     display_gesture = matched_gestures[0]['name'] if matched_gestures else "none"

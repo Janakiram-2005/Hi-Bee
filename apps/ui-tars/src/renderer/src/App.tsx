@@ -19,6 +19,7 @@ const Widget = lazy(() => import('./pages/widget'));
 const VoiceAvatarPage = lazy(() => import('./pages/voice-avatar'));
 const TestNavigation = lazy(() => import('./pages/test-navigation'));
 const GestureConfig = lazy(() => import('./pages/gestures'));
+const SignLanguagePage = lazy(() => import('./pages/sign-language'));
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
           </Route>
 
           <Route path="/gestures" element={<GestureConfig />} />
+          <Route path="/sign-language" element={<SignLanguagePage />} />
           <Route path="/widget" element={<Widget />} />
           <Route path="/voice-avatar" element={<VoiceAvatarPage />} />
         </Routes>
