@@ -31,9 +31,11 @@
 
 ## Overview
 
-**Hi-Bee** is a next-generation native GUI agent built on top of the powerful UI-TARS foundation. It introduces a revolutionary **conversational interface** to desktop automation. 
+**UI-TARS Desktop** is a cutting-edge, open-source desktop application from ByteDance that lets users control their computer with natural language. Built on the UI-TARS vision-language model, it works as a native GUI agent that can understand what is on the screen, plan a response, and execute complex computer tasks the way a human operator would. The project is designed for Windows and macOS and is distributed under the Apache 2.0 license, making it available for both personal and commercial use.
 
-Instead of typing commands, Hi-Bee sits quietly on your screen as a sleek, glowing orb. When invoked, it expands into a full command center. You can speak naturally, and Hi-Bee will use Vision-Language Models (VLMs) to visually understand your current desktop screen and execute native mouse clicks and keystrokes to accomplish the goal—all while talking back to you!
+The repository is organized as a pnpm workspace and Turborepo monorepo, with two major products living side by side: UI-TARS Desktop and Agent TARS. The desktop app itself lives under `apps/ui-tars` and is implemented with Electron for the native shell, React and TypeScript for the renderer UI, and Vite/electron-vite for the build pipeline. Around that core, the workspace is split into reusable layers for browser control, MCP clients and servers, logging, search, shared utilities, and supporting infrastructure, which keeps the codebase modular and easy to extend.
+
+At the heart of the application is a multimodal AI stack that can support multiple model providers, including Hugging Face UI-TARS models, VolcEngine Ark, and Google Vertex AI Gemini. The agent reasoning loop is built to inspect screenshots, decide on the next step, and emit precise GUI actions such as clicks, typing, scrolling, hotkeys, drag operations, and gesture-driven input handling. The operator system adds practical execution modes for local computer control, local browser control, and remote computer or browser control, while the Hi-Bee voice experience adds a draggable animated avatar, Azure voice models for multilingual input and output, live speech and TTS interactions, and a synchronized agent chat window for a more natural assistant experience.
 
 ```
 Your Voice ──► Cloud STT ──► AI Brain (VLM) ──► Native Desktop Operator ──► Computer
@@ -47,16 +49,17 @@ Your Voice ──► Cloud STT ──► AI Brain (VLM) ──► Native Desktop
 
 | Feature | Description |
 |---|---|
-| 🎙️ **Real-Time Voice STT** | Speak naturally. Powered by Google Cloud Speech-to-Text for lightning-fast transcription. |
-| 🔊 **Dynamic TTS Voices** | Agent speaks back using Google Free TTS or premium ElevenLabs voices. |
+| 🎙️ **Real-Time Voice STT** | Speak naturally. Powered by Google Cloud Speech-to-Text and multilingual Azure voice models for fast transcription and response. |
+| 🔊 **Dynamic TTS Voices** | Agent speaks back using Google Free TTS or premium Azure TTS voices with multi-language support. |
 | 👁️ **Screen Vision** | Takes screenshots of your desktop to visually ground actions, just like a human. |
 | 🖱️ **Native GUI Control** | Autonomously takes over your mouse and keyboard to click, type, and navigate OS interfaces. |
 | 🪟 **Adaptive UI Widget** | Sleek orb mode for standby, expanding into a beautifully designed Voice Panel when active. |
 | ↕️ **Smart Resizing** | Drag the panel to resize; the built-in chat history automatically expands to fill the space! |
 | ⚙️ **Live Settings** | Swap AI models, change TTS voices, or update API keys on the fly without restarting. |
+| 🗣️ **Gesture Recognition** | Use gesture-based input and vision parsing to trigger interactions and support hands-free control. |
 | 🔒 **Local Execution** | Hybrid Python/Node architecture ensures local, secure execution of OS-level commands. |
 | 🖐️ **Gesture Controls** | Trigger actions via webcam with hand and face gestures using local Mediapipe vision tasks. |
-| 🛡️ **DOM Validation** | Improved and robust DOM structure validation for higher interaction accuracy. |
+| 🛡️ **DOM Validation** | Improved and robust DOM structure validation for higher interaction accuracy, including text parsing flows for more precise automation. |
 
 ---
 
@@ -92,7 +95,7 @@ Hi-Bee bridges the gap between conversational AI and practical computer usage:
 │                                                                     │
 │   ┌─────────────────┐    ┌────────────────┐    ┌─────────────────┐ │
 │   │  Cloud STT      │    │  TTS Engine    │    │  Native Bridge  │ │
-│   │  Google Speech  │    │  ElevenLabs    │    │  Child Process  │ │
+│   │  Google Speech  │    │  Azure TTS     │    │  Child Process  │ │
 │   └─────────┬───────┘    └────────┬───────┘    └────────┬────────┘ │
 └─────────────┼─────────────────────┼─────────────────────┼──────────┘
               │                     │                     │
@@ -152,8 +155,8 @@ A glowing robot orb will appear on your screen. Click the **gear icon** inside t
 
 In the settings panel, you can configure:
 1. **Google Cloud Credentials:** Point to your `.json` service account file for Speech-to-Text.
-2. **TTS Provider:** Choose between Google Free TTS or provide an ElevenLabs API key.
-3. **Vision Model:** Select your preferred VLM (e.g., `doubao-1-5-vision-pro`, `claude-3-5-sonnet`) and insert your API key.
+2. **TTS Provider:** Choose between Google Free TTS or provide Azure Speech credentials (Key and Region).
+3. **Vision Model:** Configure Google Vertex AI for base reasoning and Anthropic Claude (`claude-3-5-sonnet` or `claude-3-7-sonnet-20250219`) for precise coordinate navigation. Insert your API keys accordingly.
 4. **Voice Settings:** Change your wake phrase, language, and volume level.
 
 ---
