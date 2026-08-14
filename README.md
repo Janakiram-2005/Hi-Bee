@@ -31,11 +31,48 @@
 
 ## Overview
 
-**UI-TARS Desktop** is a cutting-edge, open-source desktop application from ByteDance that lets users control their computer with natural language. Built on the UI-TARS vision-language model, it works as a native GUI agent that can understand what is on the screen, plan a response, and execute complex computer tasks the way a human operator would. The project is designed for Windows and macOS and is distributed under the Apache 2.0 license, making it available for both personal and commercial use.
+The main problem addressed in this work is the limited availability of accessible desktop technology for rural users, especially persons with disabilities. Existing desktop agents are usually designed for single-language interaction and depend mainly on keyboard, mouse, or touch input, which creates barriers for users who cannot easily use conventional interfaces. They also provide weak support for multilingual input and output, natural language processing, gesture-based interaction, and robust vision-language model (VLM) navigation across desktop applications. In rural settings, these limitations are intensified by low digital literacy, poor infrastructure, and reduced access to assistive tools. As a result, many users remain excluded from independent computer use and effective digital participation. This project therefore aims to develop a unified desktop agent that combines multilingual NLP, gesture input, and intelligent VLM-based navigation to support inclusive, flexible, and accessible human-computer interaction for rural and disabled users. [1] [2] [3]
 
-The repository is organized as a pnpm workspace and Turborepo monorepo, with two major products living side by side: UI-TARS Desktop and Agent TARS. The desktop app itself lives under `apps/ui-tars` and is implemented with Electron for the native shell, React and TypeScript for the renderer UI, and Vite/electron-vite for the build pipeline. Around that core, the workspace is split into reusable layers for browser control, MCP clients and servers, logging, search, shared utilities, and supporting infrastructure, which keeps the codebase modular and easy to extend.
+### Target Audience & Impact
 
-At the heart of the application is a multimodal AI stack that can support multiple model providers, including Hugging Face UI-TARS models, VolcEngine Ark, and Google Vertex AI Gemini. The agent reasoning loop is built to inspect screenshots, decide on the next step, and emit precise GUI actions such as clicks, typing, scrolling, hotkeys, drag operations, and gesture-driven input handling. The operator system adds practical execution modes for local computer control, local browser control, and remote computer or browser control, while the Hi-Bee voice experience adds a draggable animated avatar, Azure voice models for multilingual input and output, live speech and TTS interactions, and a synchronized agent chat window for a more natural assistant experience.
+The problem affects all age groups, but it is especially significant for rural users, older adults, students, working professionals, and persons with disabilities. These groups are more likely to face barriers related to language, digital literacy, physical accessibility, and limited access to modern assistive technology. In particular, users who cannot easily rely on keyboard or mouse input, or who need multilingual support, are most impacted by the lack of an inclusive desktop agent.
+
+### Our Solution
+
+Our solution is a low-cost, multilingual desktop agent that supports text, voice, and gesture inputs, uses NLP for understanding commands, and applies VLM-based desktop navigation for visual tasks. It is designed to be accessible, affordable, and easy to use for rural users and persons with disabilities.
+
+The solution works as a desktop assistant running on a standard laptop or PC with a microphone, webcam, and optional gesture-capable camera or mobile device. On the software side, it combines a multilingual NLP engine, speech-to-text, text-to-speech, gesture recognition, and a vision-language model (VLM) for understanding the screen and navigating desktop interfaces. The user can interact through voice, typed text, or gestures in their preferred language. The system interprets the input, identifies the user’s intent, and converts it into an action plan.
+
+In the workflow, the agent first captures input, then processes language and visual context, and finally performs the required desktop task such as opening apps, filling forms, clicking buttons, or reading on-screen content. It returns results through spoken output, visual prompts, or text feedback. Data includes user commands, screen screenshots, UI states, and action logs, which are used only for task execution and response generation. The design is lightweight and cost-aware, using affordable hardware and reusable software components so it can be deployed in rural and low-resource environments while still supporting accessibility for persons with disabilities.
+
+### Core Technologies
+
+- Speech recognition / speech-to-text
+- Text-to-speech
+- Computer vision
+- Natural language processing
+- Reinforcement learning
+- Edge AI / on-device AI
+
+### Data & Training
+
+The project uses a small custom dataset of desktop screenshots, UI interaction logs, command-response pairs, and gesture samples collected from common desktop tasks. It is used to train and test multilingual command understanding, VLM-based screen navigation, and gesture recognition. Public benchmark data may also be used for pretraining or evaluation where needed, but the main dataset is domain-specific because desktop workflows, languages, and accessibility needs in rural environments are not well covered by generic datasets.
+
+### Accessibility & Inclusion
+
+The project includes multilingual input and output, voice interaction, gesture-based control, and VLM-assisted screen navigation to support users with limited literacy, mobility, or language barriers. It is designed to reduce dependence on keyboard and mouse, making desktop use more accessible for rural users and persons with disabilities. The interface aims to provide clear feedback, simple workflows, and flexible interaction modes so users can choose the method that suits their needs best.
+
+The project improves digital inclusion for rural users and persons with disabilities and runs on existing hardware, making it low-cost and resource-efficient.
+
+### Sustainable Development Goals
+
+- Reduced Inequalities
+- Quality Education
+- Promote Equity and Inclusion 
+
+### Privacy & Security
+
+The system will follow privacy-first design by minimizing data collection and processing only the information needed for task execution. In the future, we plan to move more computation to local, on-device processing to improve security, reduce exposure of sensitive data, and better support AI PCs. User data will be handled with consent, stored securely, and not shared unnecessarily.
 
 ```
 Your Voice ──► Cloud STT ──► AI Brain (VLM) ──► Native Desktop Operator ──► Computer
@@ -163,4 +200,4 @@ In the settings panel, you can configure:
 
 ## License
 
-This project is licensed under the Apache License 2.0. Built upon the UI-TARS framework.
+This project is licensed under the Apache License 2.0.
