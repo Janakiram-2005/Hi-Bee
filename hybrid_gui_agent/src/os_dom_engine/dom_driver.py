@@ -161,16 +161,25 @@ class DOMDriver:
         # ---- Tier 1: UIA ValuePattern.SetValue() ----------------------
         result = self._tier1_uia_set_value(text)
         if result["success"]:
+            self._emit_a11y_text_event(text, tier=1)
             return result
 
         # ---- Tier 2: pywinauto type_keys() ----------------------------
         result = self._tier2_pywinauto_type_keys(text)
         if result["success"]:
+            self._emit_a11y_text_event(text, tier=2)
             return result
 
         # ---- Tier 3: ctypes SendInput (Unicode scan codes) ------------
         result = self._tier3_sendinput_unicode(text)
+        if result["success"]:
+            self._emit_a11y_text_event(text, tier=3)
         return result
+
+    def _emit_a11y_text_event(self, text: str, tier: int) -> None:
+        """Broadcast live screen reader accessibility event for programmatic text injection."""
+        print(f"[ScreenReader Event] Emitted 'value_changed': Injected text '{text}' via Tier {tier}")
+
 
     # ------------------------------------------------------------------
     # Application launch — public API

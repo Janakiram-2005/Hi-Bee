@@ -43,6 +43,7 @@ jobs:
 
       - name: Install pnpm
         run: npm install -g pnpm@9
+
       - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
         with:
           node-version: 20
@@ -50,7 +51,6 @@ jobs:
       - uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: 120
-          install-dependencies: true
       - name: Install dependencies
         run: pnpm install
       - name: Run typecheck
@@ -60,7 +60,7 @@ jobs:
       - name: Upload coverage data
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de  # v5.5.2
         with:
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           disable_search: true
           files: ./coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}

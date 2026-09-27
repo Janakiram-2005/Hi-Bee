@@ -36,6 +36,7 @@ class FallbackRouter:
             return {
                 "mode": "dom",
                 "elements": dom_elements,
+                "a11y_nodes": dom_elements,
                 "marked_image": None,
                 "meta": None,
                 "index_map": None
@@ -79,7 +80,9 @@ class FallbackRouter:
         return {
             "mode": "visual",
             "elements": formatted_elements,
+            "a11y_nodes": dom_elements if isinstance(dom_elements, list) else [],
             "marked_image": marked_img,
             "meta": meta,
             "index_map": index_map
         }
+

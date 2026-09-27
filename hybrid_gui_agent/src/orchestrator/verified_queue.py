@@ -48,11 +48,13 @@ try:
     import win32gui
     _WIN32GUI_AVAILABLE = True
 except ImportError:
+    win32gui = None
     _WIN32GUI_AVAILABLE = False
     logger.warning(
         "[VerifiedQueue] pywin32 not installed — DOM focus verification disabled. "
         "pip install pywin32>=306"
     )
+
 
 # Avoid circular import; DOMDriver is injected at construction time
 if TYPE_CHECKING:
