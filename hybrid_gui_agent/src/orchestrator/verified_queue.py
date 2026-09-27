@@ -38,6 +38,7 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from utils.status_reporter import report_status
+from os_dom_engine.accessibility_bridge import get_accessibility_bridge
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ try:
     import win32gui
     _WIN32GUI_AVAILABLE = True
 except ImportError:
+    win32gui = None
     _WIN32GUI_AVAILABLE = False
     logger.warning(
         "[VerifiedQueue] pywin32 not installed — DOM focus verification disabled. "
@@ -239,6 +241,13 @@ class VerifiedQueue:
             return
 
         logger.info("[VerifiedQueue] Typing %d characters into focused window.", len(text))
+        a11y_bridge = get_accessibility_bridge()
+        synth_node = a11y_bridge.register_target(
+            label=f"Input Text: {text[:20]}",
+            role="textbox",
+            coordinates=(0, 0, 100, 30),
+            action_type="type",
+        )
         try:
             # Run the blocking DOMDriver call in a thread-pool executor to
             # avoid blocking the asyncio event loop during UI interaction
@@ -260,6 +269,8 @@ class VerifiedQueue:
                 )
         except Exception as exc:
             logger.error("[VerifiedQueue] type_text dispatch error: %s", exc)
+        finally:
+            a11y_bridge.unregister_target(synth_node.node_id)
 
     # ------------------------------------------------------------------
     # DOM Focus Verification
