@@ -31,9 +31,6 @@ export function useVoiceTTS() {
     volume,
     setIsPaused,
     voiceWakeupMode,
-    hibeeSelectedVoice,
-    hibeeVoiceSpeed,
-    hibeeAutoSpeak,
   } = useVoiceStore();
 
   const { settings } = useSetting();
@@ -48,10 +45,18 @@ export function useVoiceTTS() {
   const voiceWakeupModeRef = useRef(voiceWakeupMode);
 
   // Keep refs in sync
-  useEffect(() => { pendingConfirmTextRef.current = pendingConfirmText; }, [pendingConfirmText]);
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
-  useEffect(() => { selectedLanguageRef.current = selectedLanguage; }, [selectedLanguage]);
-  useEffect(() => { voiceWakeupModeRef.current = voiceWakeupMode; }, [voiceWakeupMode]);
+  useEffect(() => {
+    pendingConfirmTextRef.current = pendingConfirmText;
+  }, [pendingConfirmText]);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+  useEffect(() => {
+    selectedLanguageRef.current = selectedLanguage;
+  }, [selectedLanguage]);
+  useEffect(() => {
+    voiceWakeupModeRef.current = voiceWakeupMode;
+  }, [voiceWakeupMode]);
 
   // Sync volume with active audio element dynamically
   useEffect(() => {
@@ -70,7 +75,9 @@ export function useVoiceTTS() {
     };
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
   }, [setAvailableVoices]);
 
   // ─── Pick the best matching browser voice ──────────────────────────────────
@@ -84,12 +91,16 @@ export function useVoiceTTS() {
         if (exact) return exact;
       }
 
-      const exactLang = voices.find((v) => v.lang === lang || v.lang.replace('_', '-') === lang);
+      const exactLang = voices.find(
+        (v) => v.lang === lang || v.lang.replace('_', '-') === lang,
+      );
       if (exactLang) return exactLang;
 
       // Indian languages — fall back to en-IN for browser synthesis
       if (lang.endsWith('-IN') || lang.endsWith('_IN')) {
-        const regionalIn = voices.find((v) => v.lang === 'en-IN' || v.lang === 'en_IN');
+        const regionalIn = voices.find(
+          (v) => v.lang === 'en-IN' || v.lang === 'en_IN',
+        );
         if (regionalIn) return regionalIn;
       }
 
@@ -115,18 +126,19 @@ export function useVoiceTTS() {
   // ─── Split text into sentence chunks for lower latency ──────────────────────
   const splitIntoChunks = useCallback((text: string): string[] => {
     const raw = text.match(/[^.!?,;]+[.!?,;]+/g) || [text];
-    return raw
-      .map((s) => s.trim())
-      .filter((s) => /\p{L}|\p{N}/u.test(s));
+    return raw.map((s) => s.trim()).filter((s) => /\p{L}|\p{N}/u.test(s));
   }, []);
 
   // ─── Core speak function ─────────────────────────────────────────────────────
   const speak = useCallback(
     async (text: string) => {
-      const mode = settingsRef.current?.voiceWakeupMode ?? voiceWakeupModeRef.current;
+      const mode =
+        settingsRef.current?.voiceWakeupMode ?? voiceWakeupModeRef.current;
       const nextState = pendingConfirmTextRef.current
         ? 'confirming'
-        : (mode === 'hotkey' ? 'idle' : 'listening');
+        : mode === 'hotkey'
+          ? 'idle'
+          : 'listening';
       if (!text?.trim() || isMuted) {
         setAvatarState(nextState);
         return;
@@ -162,12 +174,16 @@ export function useVoiceTTS() {
         isSpeakingRef.current = true;
 
         try {
-          api.logFromRenderer({ message: `[useVoiceTTS] Primary TTS: lang=${targetLang}, text="${text.slice(0, 40)}"` }).catch(() => {});
-          const result = await api.synthesizeSpeech({ 
-            text, 
+          api
+            .logFromRenderer({
+              message: `[useVoiceTTS] Primary TTS: lang=${targetLang}, text="${text.slice(0, 40)}"`,
+            })
+            .catch(() => {});
+          const result = await api.synthesizeSpeech({
+            text,
             languageCode: targetLang,
             voiceId: useVoiceStore.getState().hibeeSelectedVoice,
-            speed: useVoiceStore.getState().hibeeVoiceSpeed
+            speed: useVoiceStore.getState().hibeeVoiceSpeed,
           });
 
           if (result?.audioContent) {
@@ -176,7 +192,9 @@ export function useVoiceTTS() {
               return;
             }
 
-            const audio = new Audio(`data:audio/mp3;base64,${result.audioContent}`);
+            const audio = new Audio(
+              `data:audio/mp3;base64,${result.audioContent}`,
+            );
             audio.volume = useVoiceStore.getState().volume;
             // Apply speed setting
             audio.playbackRate = useVoiceStore.getState().hibeeVoiceSpeed;
@@ -199,13 +217,21 @@ export function useVoiceTTS() {
 
             await audio.play();
           } else {
-            api.logFromRenderer({ message: '[useVoiceTTS] Primary TTS empty response, falling back to browser' }).catch(() => {});
+            api
+              .logFromRenderer({
+                message:
+                  '[useVoiceTTS] Primary TTS empty response, falling back to browser',
+              })
+              .catch(() => {});
             isSpeakingRef.current = false;
             // Fallback to browser synthesis
             await speakBrowser(text, targetLang, nextState);
           }
         } catch (err) {
-          console.warn('[useVoiceTTS] Primary TTS error, falling back to browser:', err);
+          console.warn(
+            '[useVoiceTTS] Primary TTS error, falling back to browser:',
+            err,
+          );
           isSpeakingRef.current = false;
           await speakBrowser(text, targetLang, nextState);
         }
@@ -241,7 +267,9 @@ export function useVoiceTTS() {
             u.onend = () => {
               isSpeakingRef.current = false;
               utteranceQueueRef.current = [];
-              if (typeof window !== 'undefined') { (window as any)._activeUtterances = []; }
+              if (typeof window !== 'undefined') {
+                (window as any)._activeUtterances = [];
+              }
               setIsPaused(false);
               setAvatarState(next as any);
             };
@@ -249,7 +277,9 @@ export function useVoiceTTS() {
               console.error('[useVoiceTTS] utterance error:', e);
               isSpeakingRef.current = false;
               utteranceQueueRef.current = [];
-              if (typeof window !== 'undefined') { (window as any)._activeUtterances = []; }
+              if (typeof window !== 'undefined') {
+                (window as any)._activeUtterances = [];
+              }
               setIsPaused(false);
               setAvatarState(next as any);
             };
@@ -259,34 +289,35 @@ export function useVoiceTTS() {
         });
 
         utteranceQueueRef.current = utterances;
-        if (typeof window !== 'undefined') { (window as any)._activeUtterances = utterances; }
+        if (typeof window !== 'undefined') {
+          (window as any)._activeUtterances = utterances;
+        }
         utterances.forEach((u) => window.speechSynthesis.speak(u));
       }
     },
-    [
-      isMuted,
-      selectedVoiceURI,
-      pickVoice,
-      splitIntoChunks,
-      setAvatarState,
-    ],
+    [isMuted, selectedVoiceURI, pickVoice, splitIntoChunks, setAvatarState],
   );
 
   // ─── Stop / interrupt TTS ────────────────────────────────────────────────────
   const stop = useCallback(() => {
     window.speechSynthesis.cancel();
     utteranceQueueRef.current = [];
-    if (typeof window !== 'undefined') { (window as any)._activeUtterances = []; }
+    if (typeof window !== 'undefined') {
+      (window as any)._activeUtterances = [];
+    }
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
       currentAudioRef.current = null;
     }
     isSpeakingRef.current = false;
     setIsPaused(false);
-    const mode = settingsRef.current?.voiceWakeupMode ?? voiceWakeupModeRef.current;
+    const mode =
+      settingsRef.current?.voiceWakeupMode ?? voiceWakeupModeRef.current;
     const nextState = pendingConfirmTextRef.current
       ? 'confirming'
-      : (mode === 'hotkey' ? 'idle' : 'listening');
+      : mode === 'hotkey'
+        ? 'idle'
+        : 'listening';
     setAvatarState(nextState);
   }, [setAvatarState, setIsPaused]);
 
@@ -303,7 +334,11 @@ export function useVoiceTTS() {
   // ─── Resume TTS ──────────────────────────────────────────────────────────────
   const resume = useCallback(() => {
     if (currentAudioRef.current) {
-      currentAudioRef.current.play().catch((err) => console.error('[useVoiceTTS] Play failed on resume:', err));
+      currentAudioRef.current
+        .play()
+        .catch((err) =>
+          console.error('[useVoiceTTS] Play failed on resume:', err),
+        );
     }
     window.speechSynthesis.resume();
     setIsPaused(false);
@@ -314,7 +349,9 @@ export function useVoiceTTS() {
   useEffect(() => {
     return () => {
       window.speechSynthesis.cancel();
-      if (typeof window !== 'undefined') { (window as any)._activeUtterances = []; }
+      if (typeof window !== 'undefined') {
+        (window as any)._activeUtterances = [];
+      }
       if (currentAudioRef.current) {
         currentAudioRef.current.pause();
         currentAudioRef.current = null;

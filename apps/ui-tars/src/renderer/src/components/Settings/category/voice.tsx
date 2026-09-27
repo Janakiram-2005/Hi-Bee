@@ -5,11 +5,25 @@
  * Voice Settings tab — language, accent, silence threshold, and auto-start toggle.
  */
 import { useEffect, useState } from 'react';
-import { Mic, Globe, Volume2, Keyboard, Zap, Radio, Activity } from 'lucide-react';
+import {
+  Mic,
+  Globe,
+  Volume2,
+  Keyboard,
+  Zap,
+  Radio,
+  Activity,
+} from 'lucide-react';
 import { Switch } from '@renderer/components/ui/switch';
 import { Label } from '@renderer/components/ui/label';
 import { Slider } from '@renderer/components/ui/slider';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@renderer/components/ui/select';
 import { Input } from '@renderer/components/ui/input';
 import { useVoiceStore } from '@renderer/store/voiceStore';
 
@@ -40,44 +54,75 @@ const LANGUAGES = [
 
 export function VoiceSettings() {
   const {
-    selectedLanguage, setLanguage,
-    selectedVoiceURI, setVoice,
-    availableVoices,
-    voiceWakeupMode, setWakeupMode,
+    selectedLanguage,
+    setLanguage,
+    setVoice,
+    voiceWakeupMode,
+    setWakeupMode,
     setWakePhrase,
-    hibeeSelectedVoice, setHibeeSelectedVoice,
-    hibeeVoiceSpeed, setHibeeVoiceSpeed,
-    hibeeAutoSpeak, setHibeeAutoSpeak,
+    hibeeSelectedVoice,
+    setHibeeSelectedVoice,
+    hibeeVoiceSpeed,
+    setHibeeVoiceSpeed,
+    hibeeAutoSpeak,
+    setHibeeAutoSpeak,
   } = useVoiceStore();
 
   const ELEVENLABS_VOICES = [
-    { name: "Keshavi", description: "Friendly Female", voice_id: "Ek86tj0PS0XTYchY9Ody" },
-    { name: "Anika", description: "Professional Female", voice_id: "jUjRbhZWoMK4aDciW36V" },
-    { name: "Viraj", description: "Energetic Male", voice_id: "iWNf11sz1GrUE4ppxTOL" },
-    { name: "Amit Gupta", description: "Professional Male", voice_id: "WuePGPKIAIKI8COZpzce" },
-    { name: "Muskaan", description: "Calm Female", voice_id: "xoV6iGVuOGYHLWjXhVC7" }
+    {
+      name: 'Keshavi',
+      description: 'Friendly Female',
+      voice_id: 'Ek86tj0PS0XTYchY9Ody',
+    },
+    {
+      name: 'Anika',
+      description: 'Professional Female',
+      voice_id: 'jUjRbhZWoMK4aDciW36V',
+    },
+    {
+      name: 'Viraj',
+      description: 'Energetic Male',
+      voice_id: 'iWNf11sz1GrUE4ppxTOL',
+    },
+    {
+      name: 'Amit Gupta',
+      description: 'Professional Male',
+      voice_id: 'WuePGPKIAIKI8COZpzce',
+    },
+    {
+      name: 'Muskaan',
+      description: 'Calm Female',
+      voice_id: 'xoV6iGVuOGYHLWjXhVC7',
+    },
   ];
 
   const [silenceMs, setSilenceMs] = useState(1500);
   const [autoStart, setAutoStart] = useState(false);
   const [hotkeyLabel, setHotkeyLabel] = useState('Ctrl+Shift+V');
   const [wakePhrase, setLocalWakePhrase] = useState('hey hibee');
-  const [useTeluguVoice, setUseTeluguVoice] = useState(false);
 
   // Load settings from electron-store
   useEffect(() => {
     const settingRpc = window.electron?.setting;
     if (!settingRpc) return;
-    settingRpc.getSetting().then((s: any) => {
-      if (s?.voiceLanguage) setLanguage(s.voiceLanguage);
-      if (s?.voiceAccentUri || s?.voiceAccent) setVoice(s.voiceAccentUri || s.voiceAccent);
-      if (s?.voiceSilenceMs) setSilenceMs(s.voiceSilenceMs);
-      if (typeof s?.voiceAutoStart === 'boolean') setAutoStart(s.voiceAutoStart);
-      if (typeof s?.voiceHotkey === 'string' && s.voiceHotkey.trim()) setHotkeyLabel(s.voiceHotkey);
-      if (s?.voiceWakeupMode) setWakeupMode(s.voiceWakeupMode);
-      if (s?.voiceWakePhrase) { setWakePhrase(s.voiceWakePhrase); setLocalWakePhrase(s.voiceWakePhrase); }
-      if (typeof s?.useTeluguVoice === 'boolean') setUseTeluguVoice(s.useTeluguVoice);
-    }).catch(() => {});
+    settingRpc
+      .getSetting()
+      .then((s: any) => {
+        if (s?.voiceLanguage) setLanguage(s.voiceLanguage);
+        if (s?.voiceAccentUri || s?.voiceAccent)
+          setVoice(s.voiceAccentUri || s.voiceAccent);
+        if (s?.voiceSilenceMs) setSilenceMs(s.voiceSilenceMs);
+        if (typeof s?.voiceAutoStart === 'boolean')
+          setAutoStart(s.voiceAutoStart);
+        if (typeof s?.voiceHotkey === 'string' && s.voiceHotkey.trim())
+          setHotkeyLabel(s.voiceHotkey);
+        if (s?.voiceWakeupMode) setWakeupMode(s.voiceWakeupMode);
+        if (s?.voiceWakePhrase) {
+          setWakePhrase(s.voiceWakePhrase);
+          setLocalWakePhrase(s.voiceWakePhrase);
+        }
+      })
+      .catch(() => {});
   }, [setLanguage, setVoice, setWakeupMode, setWakePhrase]);
 
   const save = (updates: Record<string, any>) => {
@@ -86,18 +131,9 @@ export function VoiceSettings() {
     settingRpc.updateSetting(updates).catch(() => {});
   };
 
-  // Voices for current language
-  const prefix = selectedLanguage.split('-')[0];
-  const langVoices = availableVoices.filter((v) => v.lang.startsWith(prefix));
-
   const handleLanguageChange = (val: string) => {
     setLanguage(val);
     save({ voiceLanguage: val });
-  };
-
-  const handleVoiceChange = (uri: string) => {
-    setVoice(uri);
-    save({ voiceAccent: uri, voiceAccentUri: uri });
   };
 
   const handleSilenceChange = (val: number[]) => {
@@ -129,8 +165,11 @@ export function VoiceSettings() {
           <div>
             <Label className="text-sm font-medium">Auto-start Listening</Label>
             <p className="text-xs text-muted-foreground mt-1">
-              Automatically begin listening when the app launches.
-              When off, use <kbd className="px-1.5 py-0.5 rounded text-xs bg-muted border border-border font-mono">{hotkeyLabel}</kbd> to toggle.
+              Automatically begin listening when the app launches. When off, use{' '}
+              <kbd className="px-1.5 py-0.5 rounded text-xs bg-muted border border-border font-mono">
+                {hotkeyLabel}
+              </kbd>{' '}
+              to toggle.
             </p>
           </div>
         </div>
@@ -142,17 +181,20 @@ export function VoiceSettings() {
         <Keyboard className="h-4 w-4 text-muted-foreground" />
         <p className="text-xs text-muted-foreground">
           <strong>Global Hotkey:</strong> Press{' '}
-          <kbd className="px-1.5 py-0.5 rounded text-xs bg-background border border-border font-mono">{hotkeyLabel}</kbd>{' '}
+          <kbd className="px-1.5 py-0.5 rounded text-xs bg-background border border-border font-mono">
+            {hotkeyLabel}
+          </kbd>{' '}
           anywhere on your computer to toggle HI-Bee.
         </p>
       </div>
-
 
       {/* Language */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Globe className="h-4 w-4 text-muted-foreground" />
-          <Label className="text-sm font-medium">Recognition & Response Language</Label>
+          <Label className="text-sm font-medium">
+            Recognition & Response Language
+          </Label>
         </div>
         <Select value={selectedLanguage} onValueChange={handleLanguageChange}>
           <SelectTrigger className="w-full">
@@ -160,7 +202,9 @@ export function VoiceSettings() {
           </SelectTrigger>
           <SelectContent>
             {LANGUAGES.map((l) => (
-              <SelectItem key={l.code} value={l.code}>{l.label}</SelectItem>
+              <SelectItem key={l.code} value={l.code}>
+                {l.label}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -179,7 +223,10 @@ export function VoiceSettings() {
         {/* Voice Selection */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Primary Voice</Label>
-          <Select value={hibeeSelectedVoice} onValueChange={setHibeeSelectedVoice}>
+          <Select
+            value={hibeeSelectedVoice}
+            onValueChange={setHibeeSelectedVoice}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select a voice" />
             </SelectTrigger>
@@ -199,7 +246,10 @@ export function VoiceSettings() {
         {/* Voice Speed */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Voice Speed</Label>
-          <Select value={hibeeVoiceSpeed.toString()} onValueChange={(val) => setHibeeVoiceSpeed(parseFloat(val))}>
+          <Select
+            value={hibeeVoiceSpeed.toString()}
+            onValueChange={(val) => setHibeeVoiceSpeed(parseFloat(val))}
+          >
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select speed" />
             </SelectTrigger>
@@ -217,13 +267,18 @@ export function VoiceSettings() {
           <div className="flex gap-3">
             <Volume2 className="h-5 w-5 text-violet-500 mt-0.5" />
             <div>
-              <Label className="text-sm font-medium">Auto Speak Responses</Label>
+              <Label className="text-sm font-medium">
+                Auto Speak Responses
+              </Label>
               <p className="text-xs text-muted-foreground mt-1">
                 Automatically play the audio response when Hi-Bee replies.
               </p>
             </div>
           </div>
-          <Switch checked={hibeeAutoSpeak} onCheckedChange={setHibeeAutoSpeak} />
+          <Switch
+            checked={hibeeAutoSpeak}
+            onCheckedChange={setHibeeAutoSpeak}
+          />
         </div>
       </div>
 
@@ -249,8 +304,8 @@ export function VoiceSettings() {
           <span>4000ms (Very slow)</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          How long the agent waits after you stop speaking before processing your request.
-          Lower = faster but may cut off mid-sentence.
+          How long the agent waits after you stop speaking before processing
+          your request. Lower = faster but may cut off mid-sentence.
         </p>
       </div>
 
@@ -260,14 +315,21 @@ export function VoiceSettings() {
           <Radio className="h-4 w-4 text-muted-foreground" />
           <Label className="text-sm font-medium">Wake-up Mode</Label>
         </div>
-        <Select value={voiceWakeupMode} onValueChange={(v) => handleWakeupModeChange(v as any)}>
+        <Select
+          value={voiceWakeupMode}
+          onValueChange={(v) => handleWakeupModeChange(v as any)}
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select wake-up mode" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="hotkey">🎹 Hotkey ({hotkeyLabel})</SelectItem>
-            <SelectItem value="phrase">🗣️ Wake Word (e.g. "Hey Hi-Bee")</SelectItem>
-            <SelectItem value="live_agent">🔴 Live Agent (always listening)</SelectItem>
+            <SelectItem value="phrase">
+              🗣️ Wake Word (e.g. "Hey Hi-Bee")
+            </SelectItem>
+            <SelectItem value="live_agent">
+              🔴 Live Agent (always listening)
+            </SelectItem>
           </SelectContent>
         </Select>
         {voiceWakeupMode === 'phrase' && (
@@ -280,14 +342,17 @@ export function VoiceSettings() {
               placeholder="hey hibee"
               className="text-sm"
             />
-            <p className="text-xs text-muted-foreground">Say this phrase to activate Hi-Bee.</p>
+            <p className="text-xs text-muted-foreground">
+              Say this phrase to activate Hi-Bee.
+            </p>
           </div>
         )}
         {voiceWakeupMode === 'live_agent' && (
           <div className="flex items-center gap-2 p-2 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
             <Activity className="h-4 w-4 text-amber-600 shrink-0" />
             <p className="text-xs text-amber-700 dark:text-amber-300">
-              Hi-Bee listens continuously. After a 4-second speech gap, it will ask for your confirmation before executing.
+              Hi-Bee listens continuously. After a 4-second speech gap, it will
+              ask for your confirmation before executing.
             </p>
           </div>
         )}
@@ -296,9 +361,10 @@ export function VoiceSettings() {
       {/* Info box */}
       <div className="p-3 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800">
         <p className="text-xs text-violet-700 dark:text-violet-300">
-          <strong>STT:</strong> Google Cloud Speech-to-Text v1 (60 min/month free) ·{' '}
-          <strong>TTS:</strong> ElevenLabs Multilingual v2 (Default) ·{' '}
-          <strong>AI:</strong> Gemini Vertex (<code>convertionalai</code>).<br/>
+          <strong>STT:</strong> Google Cloud Speech-to-Text v1 (60 min/month
+          free) · <strong>TTS:</strong> ElevenLabs Multilingual v2 (Default) ·{' '}
+          <strong>AI:</strong> Gemini Vertex (<code>convertionalai</code>).
+          <br />
           Voice history is saved to MongoDB Atlas for context.
         </p>
       </div>

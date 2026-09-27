@@ -1,5 +1,8 @@
 import assert from 'node:assert';
-import { AccessibilityBridgeTS, SyntheticNodeData } from './accessibilityBridge';
+import {
+  AccessibilityBridgeTS,
+  SyntheticNodeData,
+} from './accessibilityBridge';
 
 async function runTests() {
   console.log('Running AccessibilityBridgeTS test suite...');
@@ -16,7 +19,10 @@ async function runTests() {
     );
     const elapsed = performance.now() - start;
 
-    assert.ok(elapsed < 10, `Registration took ${elapsed} ms (expected < 10 ms)`);
+    assert.ok(
+      elapsed < 10,
+      `Registration took ${elapsed} ms (expected < 10 ms)`,
+    );
     assert.ok(node.registeredAtMs < 10);
     assert.strictEqual(node.label, 'Submit Order');
     assert.strictEqual(node.role, 'Button');
@@ -49,7 +55,7 @@ async function runTests() {
     console.log('✔ Test 3: Manual unregistration passed');
 
     // Test 4: Auto-cleanup within 200 ms
-    const node4 = bridge.registerTarget('Banner', 'link', [30, 30]);
+    bridge.registerTarget('Banner', 'link', [30, 30]);
     assert.ok(bridge.getActiveNodes().length >= 1);
     await new Promise((resolve) => setTimeout(resolve, 250));
     assert.strictEqual(bridge.getActiveNodes().length, 0);
