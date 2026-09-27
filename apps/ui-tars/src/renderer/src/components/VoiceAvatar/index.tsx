@@ -85,36 +85,61 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
         if (words && words.length > 0) {
           (async () => {
             try {
-              api.logFromRenderer({ message: `[VoiceWidget] Received gesture words for parsing: ${words.join(' ')}` }).catch(() => {});
+              api
+                .logFromRenderer({
+                  message: `[VoiceWidget] Received gesture words for parsing: ${words.join(' ')}`,
+                })
+                .catch(() => {});
               // We need access to the selected language, but we can read it from the store or default to en-US
               const lang = useVoiceStore.getState().selectedLanguage || 'en-US';
-              
+
               // 1. Show the raw words in the chat as the user turn
-              useVoiceStore.getState().addTurn({ id: uuidv4(), role: 'user', text: `[Gestures] ${words.join(' ')}`, timestamp: Date.now() });
+              useVoiceStore
+                .getState()
+                .addTurn({
+                  id: uuidv4(),
+                  role: 'user',
+                  text: `[Gestures] ${words.join(' ')}`,
+                  timestamp: Date.now(),
+                });
               useVoiceStore.getState().setAvatarState('thinking');
-              
+
               // 2. Call LLM to parse into grammatical sentence
-              const result = await api.parseGestureSentence({ words, language: lang });
+              const result = await api.parseGestureSentence({
+                words,
+                language: lang,
+              });
               const parsedText = result.text;
-              
+
               // 3. Show AI response
-              useVoiceStore.getState().addTurn({ id: uuidv4(), role: 'assistant', text: parsedText, timestamp: Date.now() });
+              useVoiceStore
+                .getState()
+                .addTurn({
+                  id: uuidv4(),
+                  role: 'assistant',
+                  text: parsedText,
+                  timestamp: Date.now(),
+                });
               useVoiceStore.getState().setAvatarState('idle');
-              
+
               // 4. Play audio using ElevenLabs
-              const { speak } = useVoiceStore.getState(); // Wait, speak is from useVoiceTTS, not store
-              // We can just set a flag or trigger a custom event that the hook can pick up, 
+              // We can just set a flag or trigger a custom event that the hook can pick up,
               // OR we can dispatch an event to the window and listen to it in the component body
-              window.dispatchEvent(new CustomEvent('hibee:trigger-speak', { detail: parsedText }));
+              window.dispatchEvent(
+                new CustomEvent('hibee:trigger-speak', { detail: parsedText }),
+              );
             } catch (err) {
               console.error('Failed to parse gesture sentence', err);
-              useVoiceStore.getState().setAvatarState('error');
+              useVoiceStore.getState().setAvatarState('idle');
             }
           })();
         }
       }
     };
-    const unsubscribe = window.electron?.ipcRenderer?.on('hibee:pipeline-status', handler);
+    const unsubscribe = window.electron?.ipcRenderer?.on(
+      'hibee:pipeline-status' as any,
+      handler,
+    );
     return () => {
       unsubscribe?.();
     };
@@ -159,9 +184,14 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       const lastScreenshotMsg = [...agentMessages]
         .reverse()
         .find((m) => m.screenshotBase64 || m.screenshotBase64WithElementMarker);
-      const b64 = lastScreenshotMsg?.screenshotBase64WithElementMarker || lastScreenshotMsg?.screenshotBase64 || null;
+      const b64 =
+        lastScreenshotMsg?.screenshotBase64WithElementMarker ||
+        lastScreenshotMsg?.screenshotBase64 ||
+        null;
       if (b64) {
-        setLiveScreenshot(b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`);
+        setLiveScreenshot(
+          b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`,
+        );
       } else {
         setLiveScreenshot(null);
       }
@@ -175,7 +205,10 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   const [overrideText, setOverrideText] = useState<string | null>(null);
 
   // ── Controlled panel size ────────────────────────────────────────────────
-  const [panelSize, setPanelSize] = useState<{ width: number | string; height: number | string }>({
+  const [panelSize, setPanelSize] = useState<{
+    width: number | string;
+    height: number | string;
+  }>({
     width: 340,
     height: 'auto',
   });
@@ -191,9 +224,16 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     };
   }, []);
 
-  const [completedMsgOverride, setCompletedMsgOverride] = useState<string | null>(null);
+  const [completedMsgOverride, setCompletedMsgOverride] = useState<
+    string | null
+  >(null);
   const [errorMsgOverride, setErrorMsgOverride] = useState<string | null>(null);
-  const idleMsgs = ['Ready to work', "Let's begin", 'Hello..!!', 'See you soon'];
+  const idleMsgs = [
+    'Ready to work',
+    "Let's begin",
+    'Hello..!!',
+    'See you soon',
+  ];
 
   // Whenever a new run starts or when we become idle, clear the override
   useEffect(() => {
@@ -255,7 +295,10 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       if (actionLower.includes('type') || actionLower.includes('write')) {
         effectiveState = 'typing';
         effectiveText = 'Writing text...';
-      } else if (actionLower.includes('launch') || actionLower.includes('open')) {
+      } else if (
+        actionLower.includes('launch') ||
+        actionLower.includes('open')
+      ) {
         effectiveState = 'navigating';
         effectiveText = `Launching ${pythonState.currentAction?.args?.app_name || 'app'}...`;
       } else {
@@ -278,7 +321,11 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   } else if (errorMsgOverride) {
     effectiveState = 'error';
     effectiveText = errorMsgOverride;
-  } else if (agentStatus === StatusEnum.RUNNING || agentStatus === StatusEnum.CALL_USER || agentThinking) {
+  } else if (
+    agentStatus === StatusEnum.RUNNING ||
+    agentStatus === StatusEnum.CALL_USER ||
+    agentThinking
+  ) {
     if (agentThinking && !agentAction) {
       effectiveState = 'thinking';
       effectiveText = 'Analyzing your request...';
@@ -287,23 +334,48 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       effectiveText = 'Waiting for user input...';
     } else if (agentAction) {
       const actionLower = agentAction.toLowerCase();
-      
-      if (actionLower.startsWith('click') || actionLower.startsWith('double') || actionLower.includes('press')) {
+
+      if (
+        actionLower.startsWith('click') ||
+        actionLower.startsWith('double') ||
+        actionLower.includes('press')
+      ) {
         effectiveState = 'clicking';
         effectiveText = 'Clicking target elements...';
-      } else if (actionLower.startsWith('type') || actionLower.startsWith('hotkey') || actionLower.includes('write')) {
+      } else if (
+        actionLower.startsWith('type') ||
+        actionLower.startsWith('hotkey') ||
+        actionLower.includes('write')
+      ) {
         effectiveState = 'typing';
         effectiveText = 'Writing text...';
-      } else if (actionLower.startsWith('screenshot') || actionLower.includes('scan')) {
+      } else if (
+        actionLower.startsWith('screenshot') ||
+        actionLower.includes('scan')
+      ) {
         effectiveState = 'scanning';
         effectiveText = 'Scanning desktop elements...';
-      } else if (actionLower.includes('search') || actionLower.includes('google') || actionLower.includes('bing') || actionLower.includes('chrome')) {
+      } else if (
+        actionLower.includes('search') ||
+        actionLower.includes('google') ||
+        actionLower.includes('bing') ||
+        actionLower.includes('chrome')
+      ) {
         effectiveState = 'searching';
         effectiveText = 'Searching Chrome tabs...';
-      } else if (actionLower.includes('scroll') || actionLower.includes('drag') || actionLower.includes('navigate') || actionLower.includes('open') || actionLower.includes('launch')) {
+      } else if (
+        actionLower.includes('scroll') ||
+        actionLower.includes('drag') ||
+        actionLower.includes('navigate') ||
+        actionLower.includes('open') ||
+        actionLower.includes('launch')
+      ) {
         effectiveState = 'navigating';
         effectiveText = 'Navigating screen area...';
-      } else if (actionLower.startsWith('finished') || actionLower.startsWith('finish')) {
+      } else if (
+        actionLower.startsWith('finished') ||
+        actionLower.startsWith('finish')
+      ) {
         effectiveState = 'success';
         effectiveText = 'Task completed successfully.';
       } else {
@@ -315,7 +387,9 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       effectiveText = 'Analyzing your request...';
     }
   } else if (completedMsgOverride) {
-    effectiveState = idleMsgs.includes(completedMsgOverride) ? 'idle' : 'success';
+    effectiveState = idleMsgs.includes(completedMsgOverride)
+      ? 'idle'
+      : 'success';
     effectiveText = completedMsgOverride;
   } else {
     // Fall back to voice-specific active states (listening, speaking, thinking, idle)
@@ -327,8 +401,12 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       effectiveText = `Can I execute: "${pendingConfirmText}" for you, sir?`;
     } else if (avatarState === 'speaking') {
       effectiveState = 'speaking';
-      const lastAssistantTurn = [...history].reverse().find((t) => t.role === 'assistant');
-      effectiveText = lastAssistantTurn ? lastAssistantTurn.text : 'Speaking...';
+      const lastAssistantTurn = [...history]
+        .reverse()
+        .find((t) => t.role === 'assistant');
+      effectiveText = lastAssistantTurn
+        ? lastAssistantTurn.text
+        : 'Speaking...';
     } else if (avatarState === 'thinking') {
       effectiveState = 'thinking';
       effectiveText = 'Thinking...';
@@ -354,14 +432,20 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     return undefined;
   }, [effectiveText, displayedText]);
 
-  const showBubble = !isExpanded && !!displayedText && displayedText.trim() !== '';
+  const showBubble =
+    !isExpanded && !!displayedText && displayedText.trim() !== '';
 
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, startX: 0, startY: 0 });
   const isListeningRef = useRef(false);
 
   // ─── TTS hook ────────────────────────────────────────────────────────────
-  const { speak, stop: stopTTS, pause: pauseTTS, resume: resumeTTS } = useVoiceTTS();
+  const {
+    speak,
+    stop: stopTTS,
+    pause: pauseTTS,
+    resume: resumeTTS,
+  } = useVoiceTTS();
 
   useEffect(() => {
     const speakListener = (e: CustomEvent) => {
@@ -369,12 +453,21 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
         speak(e.detail);
       }
     };
-    window.addEventListener('hibee:trigger-speak', speakListener as EventListener);
-    return () => window.removeEventListener('hibee:trigger-speak', speakListener as EventListener);
+    window.addEventListener(
+      'hibee:trigger-speak',
+      speakListener as EventListener,
+    );
+    return () =>
+      window.removeEventListener(
+        'hibee:trigger-speak',
+        speakListener as EventListener,
+      );
   }, [speak]);
 
   const handlePlayLast = useCallback(() => {
-    const lastAssistantTurn = [...history].reverse().find((t) => t.role === 'assistant');
+    const lastAssistantTurn = [...history]
+      .reverse()
+      .find((t) => t.role === 'assistant');
     if (lastAssistantTurn?.text) {
       speak(lastAssistantTurn.text);
     }
@@ -387,7 +480,12 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       isListeningRef.current = false;
 
       // Add user turn to history
-      addTurn({ id: uuidv4(), role: 'user', text: transcript, timestamp: Date.now() });
+      addTurn({
+        id: uuidv4(),
+        role: 'user',
+        text: transcript,
+        timestamp: Date.now(),
+      });
 
       // Build chat history for context (last 10 turns)
       const ctxHistory = history.slice(-10).map((t) => ({
@@ -416,14 +514,26 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       } catch (err) {
         // Localized fallback based on selected language
         const lang = selectedLanguage;
-        let fallback = "I ran into a slight issue. Could you try again?";
-        if (lang.startsWith('te-')) fallback = 'క్షమించండి, నాకు ఒక సమస్య వచ్చింది. మళ్ళీ ప్రయత్నించండి.';
-        else if (lang.startsWith('hi-')) fallback = 'माफ़ करें, एक समस्या आई। कृपया फिर से प्रयास करें।';
-        else if (lang.startsWith('ta-')) fallback = 'மன்னிக்கவும், ஒரு பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.';
-        else if (lang.startsWith('kn-')) fallback = 'ಕ್ಷಮಿಸಿ, ಒಂದು ಸಮಸ್ಯೆ ಆಯಿತು. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.';
-        else if (lang.startsWith('ml-')) fallback = 'ക്ഷമിക്കണം, ഒരു പ്രശ്‌നം ഉണ്ടായി. വീണ്ടും ശ്രമിക്കൂ.';
-        else if (lang.startsWith('bn-')) fallback = 'দুঃখিত, একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।';
-        addTurn({ id: uuidv4(), role: 'assistant', text: fallback, timestamp: Date.now() });
+        let fallback = 'I ran into a slight issue. Could you try again?';
+        if (lang.startsWith('te-'))
+          fallback = 'క్షమించండి, నాకు ఒక సమస్య వచ్చింది. మళ్ళీ ప్రయత్నించండి.';
+        else if (lang.startsWith('hi-'))
+          fallback = 'माफ़ करें, एक समस्या आई। कृपया फिर से प्रयास करें।';
+        else if (lang.startsWith('ta-'))
+          fallback =
+            'மன்னிக்கவும், ஒரு பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.';
+        else if (lang.startsWith('kn-'))
+          fallback = 'ಕ್ಷಮಿಸಿ, ಒಂದು ಸಮಸ್ಯೆ ಆಯಿತು. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.';
+        else if (lang.startsWith('ml-'))
+          fallback = 'ക്ഷമിക്കണം, ഒരു പ്രശ്‌നം ഉണ്ടായി. വീണ്ടും ശ്രമിക്കൂ.';
+        else if (lang.startsWith('bn-'))
+          fallback = 'দুঃখিত, একটি সমস্যা হয়েছে। আবার চেষ্টা করুন।';
+        addTurn({
+          id: uuidv4(),
+          role: 'assistant',
+          text: fallback,
+          timestamp: Date.now(),
+        });
         speak(fallback);
       }
     },
@@ -436,7 +546,9 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   }, [stopTTS]);
 
   const handlePermissionDenied = useCallback(() => {
-    setPermissionError('Microphone access was denied or the Speech Recognition service is unavailable. Please check system permissions or switch to Text Chat mode.');
+    setPermissionError(
+      'Microphone access was denied or the Speech Recognition service is unavailable. Please check system permissions or switch to Text Chat mode.',
+    );
     setPermissionsReady(false);
     setExpanded(true);
   }, [setExpanded]);
@@ -474,13 +586,23 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       stopListening(true);
     } else {
       stopTTS();
-      if (agentStatus === StatusEnum.RUNNING || agentStatus === StatusEnum.CALL_USER) {
+      if (
+        agentStatus === StatusEnum.RUNNING ||
+        agentStatus === StatusEnum.CALL_USER
+      ) {
         await api.stopRun().catch(() => {});
       }
       setExpanded(true);
       startListening();
     }
-  }, [isListening, startListening, stopListening, stopTTS, agentStatus, setExpanded]);
+  }, [
+    isListening,
+    startListening,
+    stopListening,
+    stopTTS,
+    agentStatus,
+    setExpanded,
+  ]);
 
   const handleReset = useCallback(async () => {
     await api.stopRun().catch(() => {});
@@ -492,20 +614,37 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     setAvatarState('idle');
 
     const lang = selectedLanguage;
-    let msg = "Memory cleared. Starting fresh!";
-    if (lang.startsWith('te-')) msg = "టాస్క్ మెమరీ క్లియర్ చేయబడింది. కొత్తగా ప్రారంభిస్తున్నాను!";
-    else if (lang.startsWith('hi-')) msg = "कार्य स्मृति साफ़ कर दी गई है। नए सिरे से शुरुआत कर रहे हैं!";
-    else if (lang.startsWith('ta-')) msg = "பணி நினைவகம் அழிக்கப்பட்டது. புதியதாக தொடங்குகிறது!";
-    else if (lang.startsWith('kn-')) msg = "ಕೆಲಸದ ಮೆಮೊರಿ ತೆರವುಗೊಳಿಸಲಾಗಿದೆ. ಹೊಸದಾಗಿ ಪ್ರಾರಂಭಿಸಲಾಗುತ್ತಿದೆ!";
-    else if (lang.startsWith('ml-')) msg = "ടാസ്ക് മെമ്മറി മായ്‌ച്ചു. പുതിയതായി ആരംഭിക്കുന്നു!";
-    else if (lang.startsWith('bn-')) msg = "টাস্ক মেমরি মুছে ফেলা হয়েছে। নতুন করে শুরু করছি!";
+    let msg = 'Memory cleared. Starting fresh!';
+    if (lang.startsWith('te-'))
+      msg = 'టాస్క్ మెమరీ క్లియర్ చేయబడింది. కొత్తగా ప్రారంభిస్తున్నాను!';
+    else if (lang.startsWith('hi-'))
+      msg = 'कार्य स्मृति साफ़ कर दी गई है। नए सिरे से शुरुआत कर रहे हैं!';
+    else if (lang.startsWith('ta-'))
+      msg = 'பணி நினைவகம் அழிக்கப்பட்டது. புதியதாக தொடங்குகிறது!';
+    else if (lang.startsWith('kn-'))
+      msg = 'ಕೆಲಸದ ಮೆಮೊರಿ ತೆರವುಗೊಳಿಸಲಾಗಿದೆ. ಹೊಸದಾಗಿ ಪ್ರಾರಂಭಿಸಲಾಗುತ್ತಿದೆ!';
+    else if (lang.startsWith('ml-'))
+      msg = 'ടാസ്ക് മെമ്മറി മായ്‌ച്ചു. പുതിയതായി ആരംഭിക്കുന്നു!';
+    else if (lang.startsWith('bn-'))
+      msg = 'টাস্ক মেমরি মুছে ফেলা হয়েছে। নতুন করে শুরু করছি!';
     speak(msg);
-  }, [speak, stopTTS, clearHistory, setCurrentTask, setTextInput, setAvatarState, selectedLanguage]);
+  }, [
+    speak,
+    stopTTS,
+    clearHistory,
+    setCurrentTask,
+    setTextInput,
+    setAvatarState,
+    selectedLanguage,
+  ]);
 
   // ─── Hotkey listener from main process ───────────────────────────────────
   useEffect(() => {
     const handler = () => toggleListening();
-    const unsubscribe = window.electron?.ipcRenderer?.on('voice:toggle-listen', handler);
+    const unsubscribe = window.electron?.ipcRenderer?.on(
+      'voice:toggle-listen',
+      handler,
+    );
     return () => {
       unsubscribe?.();
     };
@@ -524,7 +663,10 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
         });
       }
     };
-    const unsubscribe = window.electron?.ipcRenderer?.on('voice:speak-text', handler);
+    const unsubscribe = window.electron?.ipcRenderer?.on(
+      'voice:speak-text',
+      handler,
+    );
     return () => {
       unsubscribe?.();
     };
@@ -547,7 +689,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
   // ─── Auto-restart listening after speaking completes (hotkey mode only) ──
   // For phrase/live_agent modes, useCloudSTT manages the restart loop internally.
   const restartDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   const [pendingGesture, setPendingGesture] = useState<any>(null);
   const [showVisionPanel, setShowVisionPanel] = useState(false);
 
@@ -557,29 +699,44 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       console.log('[Gesture]', payload.action, payload.actionArg);
       if (payload.action === 'start_listening') {
         if (!isListening?.()) {
-          api.logFromRenderer({ message: `[VoiceWidget] Gesture triggered start_listening` }).catch(() => {});
+          api
+            .logFromRenderer({
+              message: `[VoiceWidget] Gesture triggered start_listening`,
+            })
+            .catch(() => {});
           startListening();
         }
       } else if (payload.action === 'start_task') {
         if (settings?.googleApiSource === 'agent_builder') {
-          window.electron.ipcRenderer.invoke('hibee-agent:toggle').catch(() => {});
+          window.electron.ipcRenderer
+            .invoke('hibee-agent:toggle')
+            .catch(() => {});
         } else {
           toggleExpanded();
         }
       } else if (payload.action) {
         // volume_up, volume_down, play_pause, open_app
-        window.electron.ipcRenderer.invoke('system:action', { 
-          action: payload.action, 
-          arg: payload.actionArg 
-        }).catch(() => {});
+        window.electron.ipcRenderer
+          .invoke('system:action', {
+            action: payload.action,
+            arg: payload.actionArg,
+          })
+          .catch(() => {});
       }
     };
-    
-    const unsubscribe = window.electron?.ipcRenderer?.on('vision-gesture' as any, handler);
+
+    const unsubscribe = window.electron?.ipcRenderer?.on(
+      'vision-gesture' as any,
+      handler,
+    );
 
     const localWakeHandler = () => {
       if (!isListening?.()) {
-        api.logFromRenderer({ message: `[VoiceWidget] Frontend Vision wake triggered` }).catch(() => {});
+        api
+          .logFromRenderer({
+            message: `[VoiceWidget] Frontend Vision wake triggered`,
+          })
+          .catch(() => {});
         startListening();
       }
     };
@@ -592,15 +749,23 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       } else if (g.action === 'start_listening') {
         if (!isListening?.()) startListening();
       } else if (g.action) {
-        window.electron.ipcRenderer.invoke('system:action', { action: g.action, arg: g.actionArg }).catch(() => {});
+        window.electron.ipcRenderer
+          .invoke('system:action', { action: g.action, arg: g.actionArg })
+          .catch(() => {});
       }
     };
-    window.addEventListener('vision:gesture-triggered', localGestureHandler as EventListener);
+    window.addEventListener(
+      'vision:gesture-triggered',
+      localGestureHandler as EventListener,
+    );
 
     return () => {
       unsubscribe?.();
       window.removeEventListener('vision:wake-triggered', localWakeHandler);
-      window.removeEventListener('vision:gesture-triggered', localGestureHandler as EventListener);
+      window.removeEventListener(
+        'vision:gesture-triggered',
+        localGestureHandler as EventListener,
+      );
     };
   }, [startListening, isListening, settings?.googleApiSource, toggleExpanded]);
 
@@ -609,22 +774,38 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     const mode = settings?.voiceWakeupMode ?? 'hotkey';
     // In hotkey mode, restart foreground listening when state returns to 'listening'
     // and no recording is active. Debounced to avoid React strict-mode double-firing.
-    if (mode === 'hotkey' && avatarState === 'listening' && isListening && !isListening()) {
+    if (
+      mode === 'hotkey' &&
+      avatarState === 'listening' &&
+      isListening &&
+      !isListening()
+    ) {
       // Clear any pending restart
       if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
       restartDebounceRef.current = setTimeout(() => {
         restartDebounceRef.current = null;
         if (!isListening?.()) {
-          api.logFromRenderer({ message: `[VoiceWidget] Hotkey mode auto-restart listening` }).catch(() => {});
+          api
+            .logFromRenderer({
+              message: `[VoiceWidget] Hotkey mode auto-restart listening`,
+            })
+            .catch(() => {});
           startListening();
         }
       }, 300);
       return () => {
-        if (restartDebounceRef.current) clearTimeout(restartDebounceRef.current);
+        if (restartDebounceRef.current)
+          clearTimeout(restartDebounceRef.current);
       };
     }
     return undefined;
-  }, [avatarState, startListening, isListening, inputMode, settings?.voiceWakeupMode]);
+  }, [
+    avatarState,
+    startListening,
+    isListening,
+    inputMode,
+    settings?.voiceWakeupMode,
+  ]);
 
   const handlePermissionsReady = useCallback(() => {
     setPermissionsReady(true);
@@ -640,44 +821,62 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     if (typeof accent === 'string') {
       setVoice(accent);
     }
-  }, [settings?.voiceLanguage, settings?.voiceAccentUri, settings?.voiceAccent, setLanguage, setVoice]);
+  }, [
+    settings?.voiceLanguage,
+    settings?.voiceAccentUri,
+    settings?.voiceAccent,
+    setLanguage,
+    setVoice,
+  ]);
 
   // ─── Dragging logic ───────────────────────────────────────────────────────
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isDragging.current = true;
-    dragStart.current = { x: e.screenX, y: e.screenY, startX: e.screenX, startY: e.screenY };
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isDragging.current = true;
+      dragStart.current = {
+        x: e.screenX,
+        y: e.screenY,
+        startX: e.screenX,
+        startY: e.screenY,
+      };
 
-    const onMove = (ev: MouseEvent) => {
-      if (!isDragging.current) return;
-      const dx = ev.screenX - dragStart.current.x;
-      const dy = ev.screenY - dragStart.current.y;
-      dragStart.current.x = ev.screenX;
-      dragStart.current.y = ev.screenY;
-      
-      // Drag the transparent Electron window itself
-      window.electron.ipcRenderer.invoke('voice-window:move', { dx, dy }).catch(() => {});
-    };
+      const onMove = (ev: MouseEvent) => {
+        if (!isDragging.current) return;
+        const dx = ev.screenX - dragStart.current.x;
+        const dy = ev.screenY - dragStart.current.y;
+        dragStart.current.x = ev.screenX;
+        dragStart.current.y = ev.screenY;
 
-    const onUp = (ev: MouseEvent) => {
-      isDragging.current = false;
-      const totalDx = Math.abs(ev.screenX - dragStart.current.startX);
-      const totalDy = Math.abs(ev.screenY - dragStart.current.startY);
-      // Only toggle if it was a click (not a drag)
-      if (totalDx < 5 && totalDy < 5) {
-        if (settings?.googleApiSource === 'agent_builder') {
-          window.electron.ipcRenderer.invoke('hibee-agent:toggle').catch(() => {});
-        } else {
-          toggleExpanded();
+        // Drag the transparent Electron window itself
+        window.electron.ipcRenderer
+          .invoke('voice-window:move', { dx, dy })
+          .catch(() => {});
+      };
+
+      const onUp = (ev: MouseEvent) => {
+        isDragging.current = false;
+        const totalDx = Math.abs(ev.screenX - dragStart.current.startX);
+        const totalDy = Math.abs(ev.screenY - dragStart.current.startY);
+        // Only toggle if it was a click (not a drag)
+        if (totalDx < 5 && totalDy < 5) {
+          if (settings?.googleApiSource === 'agent_builder') {
+            window.electron.ipcRenderer
+              .invoke('hibee-agent:toggle')
+              .catch(() => {});
+          } else {
+            toggleExpanded();
+          }
         }
-      }
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
 
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [toggleExpanded]);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [toggleExpanded],
+  );
 
   // Keep default position in the transparent window (fixed at bottom-right corner)
   const defaultPos = { right: 24, bottom: 24 };
@@ -686,12 +885,19 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     <VoicePermissionGate onReady={handlePermissionsReady}>
       <div
         className="voice-avatar-root"
-        style={{ right: defaultPos.right, bottom: permissionError ? 100 : defaultPos.bottom }}
+        style={{
+          right: defaultPos.right,
+          bottom: permissionError ? 100 : defaultPos.bottom,
+        }}
         onMouseEnter={() => {
-          window.electron.ipcRenderer.invoke('voice-window:set-ignore-mouse-events', false).catch(() => {});
+          window.electron.ipcRenderer
+            .invoke('voice-window:set-ignore-mouse-events', false)
+            .catch(() => {});
         }}
         onMouseLeave={() => {
-          window.electron.ipcRenderer.invoke('voice-window:set-ignore-mouse-events', true).catch(() => {});
+          window.electron.ipcRenderer
+            .invoke('voice-window:set-ignore-mouse-events', true)
+            .catch(() => {});
         }}
       >
         {permissionError && (
@@ -708,24 +914,81 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
 
         {/* Gesture Confirmation Modal */}
         {pendingGesture && (
-          <div className="gesture-confirmation-modal" style={{ position: 'absolute', top: '-100px', right: 0, width: '280px', background: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(12px)', border: '1px solid #3b82f6', borderRadius: '12px', padding: '16px', color: 'white', zIndex: 999, boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            className="gesture-confirmation-modal"
+            style={{
+              position: 'absolute',
+              top: '-100px',
+              right: 0,
+              width: '280px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid #3b82f6',
+              borderRadius: '12px',
+              padding: '16px',
+              color: 'white',
+              zIndex: 999,
+              boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+            }}
+          >
+            <h3
+              style={{
+                margin: '0 0 8px 0',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
               <span style={{ color: '#4ade80' }}>✋ Gesture Detected</span>
             </h3>
-            <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#cbd5e1' }}>
+            <p
+              style={{
+                margin: '0 0 16px 0',
+                fontSize: '13px',
+                color: '#cbd5e1',
+              }}
+            >
               Execute task linked to <strong>{pendingGesture.name}</strong>:
               <br />
-              <span style={{ color: '#60a5fa' }}>"{pendingGesture.actionArg}"</span> ?
+              <span style={{ color: '#60a5fa' }}>
+                "{pendingGesture.actionArg}"
+              </span>{' '}
+              ?
             </p>
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button 
-                style={{ padding: '6px 12px', borderRadius: '6px', background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', cursor: 'pointer', fontSize: '12px' }}
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  background: 'transparent',
+                  border: '1px solid #475569',
+                  color: '#cbd5e1',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                }}
                 onClick={() => setPendingGesture(null)}
               >
                 Cancel
               </button>
-              <button 
-                style={{ padding: '6px 12px', borderRadius: '6px', background: '#3b82f6', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+              <button
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  background: '#3b82f6',
+                  border: 'none',
+                  color: 'white',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                }}
                 onClick={() => {
                   handleCommit(pendingGesture.actionArg);
                   setPendingGesture(null);
@@ -738,15 +1001,17 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
         )}
 
         {/* Vision Wake Panel */}
-        <div style={{ 
-          position: 'absolute', 
-          bottom: '84px', 
-          right: isExpanded ? '360px' : '0', 
-          zIndex: 99, 
-          transition: 'right 0.3s, opacity 0.3s',
-          opacity: (isExpanded && showVisionPanel) ? 1 : 0,
-          pointerEvents: (isExpanded && showVisionPanel) ? 'auto' : 'none'
-        }}>
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '84px',
+            right: isExpanded ? '360px' : '0',
+            zIndex: 99,
+            transition: 'right 0.3s, opacity 0.3s',
+            opacity: isExpanded && showVisionPanel ? 1 : 0,
+            pointerEvents: isExpanded && showVisionPanel ? 'auto' : 'none',
+          }}
+        >
           <VisionWakePanel />
         </div>
 
@@ -757,7 +1022,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
             position: 'absolute',
             bottom: '84px',
             right: 0,
-            zIndex: 100
+            zIndex: 100,
           }}
           className="voice-resizable-wrapper"
           size={panelSize}
@@ -769,7 +1034,16 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
           }}
           minWidth={300}
           maxWidth={600}
-          enable={{ top: true, right: true, bottom: true, left: true, topRight: true, bottomRight: true, bottomLeft: true, topLeft: true }}
+          enable={{
+            top: true,
+            right: true,
+            bottom: true,
+            left: true,
+            topRight: true,
+            bottomRight: true,
+            bottomLeft: true,
+            topLeft: true,
+          }}
           handleClasses={{
             top: 'resize-handle-top',
             right: 'resize-handle-right',
@@ -785,7 +1059,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
             style={{ width: '100%', height: '100%' }}
             onClose={() => setExpanded(false)}
             onHeightReset={() => {
-              setPanelSize(prev => ({ ...prev, height: 'auto' }));
+              setPanelSize((prev) => ({ ...prev, height: 'auto' }));
             }}
             onStopTTS={stopTTS}
             onPauseTTS={pauseTTS}
@@ -797,13 +1071,15 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
             onReset={handleReset}
             isHeightAuto={panelSize.height === 'auto'}
             showVisionPanel={showVisionPanel}
-            onToggleVisionPanel={() => setShowVisionPanel(prev => !prev)}
+            onToggleVisionPanel={() => setShowVisionPanel((prev) => !prev)}
           />
         </Resizable>
 
         {/* Floating Speech Bubble */}
         {showBubble && (
-          <div className={`speech-bubble state-${effectiveState} ${isFading || !effectiveText ? 'fading-out' : 'fading-in'}`}>
+          <div
+            className={`speech-bubble state-${effectiveState} ${isFading || !effectiveText ? 'fading-out' : 'fading-in'}`}
+          >
             <div className="bubble-content">
               {displayedText}
               {effectiveState === 'typing' && (
@@ -826,10 +1102,13 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
           className={`voice-orb state-${effectiveState}`}
           onMouseDown={handleMouseDown}
           title={
-            effectiveState === 'idle' ? 'Click to toggle / drag to move' :
-            effectiveState === 'listening' ? 'Listening… (click to stop)' :
-            effectiveState === 'thinking' ? 'Processing…' :
-            'Speaking… (click to stop)'
+            effectiveState === 'idle'
+              ? 'Click to toggle / drag to move'
+              : effectiveState === 'listening'
+                ? 'Listening… (click to stop)'
+                : effectiveState === 'thinking'
+                  ? 'Processing…'
+                  : 'Speaking… (click to stop)'
           }
         >
           {/* Circling Loading and Searching Animation */}
