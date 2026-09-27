@@ -7,7 +7,7 @@ import cv2
 import subprocess
 import json
 from os_dom_engine.win32_api import get_window_rect, focus_window
-from os_dom_engine import ProcessRouter
+from os_dom_engine import ProcessRouter, get_accessibility_bridge
 from orchestrator.fallback_router import FallbackRouter
 from vision_engine import CoordinateMapper, VisualHomingAgent
 from utils import BenchmarkTool
@@ -467,10 +467,26 @@ class AgentStateMachine:
             final_x, final_y = initial_target_x, initial_y
         self.benchmark.end_phase("Closed-Loop Homing Tracer")
 
-        # Inject verified high-precision click event
-        ctypes.windll.user32.SetCursorPos(final_x, final_y)
-        ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0) # LEFTDOWN
-        time.sleep(0.05)
-        ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0) # LEFTUP
+        # Register synthetic OS accessibility node at model interaction coordinates
+        a11y_bridge = get_accessibility_bridge()
+        synth_node = a11y_bridge.register_target(
+            label=element_intent_label or "Target Element",
+            role="button",
+            coordinates=(final_x, final_y, 20, 20),
+            action_type="click",
+        )
+
+        try:
+            # Inject verified high-precision click event
+            if sys.platform == "win32":
+                ctypes.windll.user32.SetCursorPos(final_x, final_y)
+                ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0) # LEFTDOWN
+                time.sleep(0.05)
+                ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0) # LEFTUP
+            else:
+                time.sleep(0.05)
+        finally:
+            # Instantly unregister synthetic accessibility node post-action completion
+            a11y_bridge.unregister_target(synth_node.node_id)
         
         return final_x, final_y

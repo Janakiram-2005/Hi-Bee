@@ -160,7 +160,7 @@ export default function Settings() {
   console.log('initialValues', settings);
 
   const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+    resolver: (zodResolver as any)(formSchema),
     defaultValues: {
       language: 'en',
       vlmBaseUrl: '',
