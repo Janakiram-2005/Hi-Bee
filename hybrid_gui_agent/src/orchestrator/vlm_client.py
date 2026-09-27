@@ -90,18 +90,48 @@ class VLMClient:
         # Base64 encode the image
         image_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
         
-        # Prepare layout list text
+        # Prepare layout list text with formatted accessibility node bounds and labels
         layout_elements_str = ""
         if layout["mode"] == "dom":
             layout_elements = []
             for el in layout["elements"]:
-                layout_elements.append(f"ID: {el.get('id')}, Name: {el.get('name')}, Type: {el.get('type')}, Rect: {el.get('rect')}")
+                rect = el.get("rect") or el.get("box")
+                rect_str = f"Bounds: {rect}" if rect else "Bounds: [N/A]"
+                name = el.get("name") or el.get("label") or "Unnamed"
+                el_id = el.get("id") or "N/A"
+                el_type = el.get("type") or "Control"
+                patterns = el.get("patterns") or []
+                pattern_str = f", Patterns: {patterns}" if patterns else ""
+                layout_elements.append(
+                    f"[A11y Node] ID: {el_id}, Name/Label: '{name}', Role/Type: {el_type}, {rect_str}{pattern_str}"
+                )
             layout_elements_str = "\n".join(layout_elements)
         else:
             layout_elements = []
             for el in layout["elements"]:
-                layout_elements.append(f"Tag: {el.get('index')}, Type: {el.get('type')}, Text: {el.get('text')}")
+                box = el.get("box")
+                box_str = f"Bounds: {box}" if box else "Bounds: [N/A]"
+                text = el.get("text") or el.get("name") or "N/A"
+                tag = el.get("index") or el.get("id")
+                el_type = el.get("type") or "VisualElement"
+                layout_elements.append(
+                    f"[Visual Node] Tag Index: {tag}, Type: {el_type}, Label/Text: '{text}', {box_str}"
+                )
+            
+            # If hybrid mode has additional accessibility tree metadata, append it
+            a11y_nodes = layout.get("a11y_nodes") or []
+            if a11y_nodes:
+                layout_elements.append("\nAssociated Native OS Accessibility Tree Nodes:")
+                for a_node in a11y_nodes[:20]:
+                    rect = a_node.get("rect") or a_node.get("box")
+                    rect_str = f"Bounds: {rect}" if rect else "Bounds: [N/A]"
+                    name = a_node.get("name") or "Unnamed"
+                    node_id = a_node.get("id") or "N/A"
+                    layout_elements.append(
+                        f"[A11y Metadata] ID: {node_id}, Name: '{name}', Role: {a_node.get('type', 'Control')}, {rect_str}"
+                    )
             layout_elements_str = "\n".join(layout_elements)
+
 
         user_prompt = (
             f"Active Window Mode: {layout['mode']}\n"

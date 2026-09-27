@@ -181,3 +181,54 @@ class CoordinateMapper:
         y_global = meta["window_top"] + y_crop
         
         return int(round(x_global)), int(round(y_global))
+
+    @staticmethod
+    def map_coordinates_to_a11y_node(x: float, y: float, a11y_nodes: list) -> dict:
+        """
+        Map vision-language model coordinate outputs back to accessibility tree nodes
+        to ensure programmatic consistency across UI interactions.
+        """
+        if not a11y_nodes:
+            return None
+
+        matching_node = None
+        min_distance = float("inf")
+
+        for node in a11y_nodes:
+            rect = node.get("rect") or node.get("box")
+            if not rect or len(rect) < 4:
+                continue
+            rx, ry, rw, rh = rect[:4]
+            
+            # Check direct bounding rectangle containment
+            if rx <= x <= (rx + rw) and ry <= y <= (ry + rh):
+                return node
+
+            # Calculate distance to bounding box center for spatial fallback
+            cx = rx + (rw / 2.0)
+            cy = ry + (rh / 2.0)
+            dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            if dist < min_distance and dist <= 150:
+                min_distance = dist
+                matching_node = node
+
+        return matching_node
+
+    @staticmethod
+    def generate_synthetic_announcement(target_info: dict) -> str:
+        """
+        Generate synthetic screen reader announcements for applications lacking accessibility trees,
+        providing programmatic voice/text feedback on visual coordinate actions.
+        """
+        element_type = target_info.get("type", "Visual Element")
+        tag_index = target_info.get("index") or target_info.get("id", "N/A")
+        text_content = target_info.get("text") or target_info.get("name") or ""
+        center = target_info.get("center") or target_info.get("box", [0, 0, 0, 0])
+        
+        announcement = f"Synthetic Screen Reader Announcement: Focused visual control [{tag_index}] ({element_type})"
+        if text_content:
+            announcement += f" containing text '{text_content}'"
+        announcement += f" at visual coordinates {center}."
+        print(f"[ScreenReader Synthetic] {announcement}")
+        return announcement
+

@@ -415,6 +415,31 @@ class AgentStateMachine:
         focus_window(hwnd)
         time.sleep(0.1)
         
+        # Map VLM coordinate outputs back to accessibility tree nodes for programmatic consistency
+        a11y_nodes = layout.get("a11y_nodes") or layout.get("elements") or []
+        matched_a11y_node = CoordinateMapper.map_coordinates_to_a11y_node(x_target, y_target, a11y_nodes)
+        
+        if matched_a11y_node:
+            print(f"[A11y Pipeline] Mapped VLM target ({x_target}, {y_target}) to native accessibility node: {matched_a11y_node.get('name')} (ID: {matched_a11y_node.get('id')})")
+            self.tree_broker.set_accessibility_focus(hwnd, matched_a11y_node)
+            self.tree_broker.emit_accessibility_event("action_executed", {
+                "action": "click",
+                "node": matched_a11y_node,
+                "target_coordinates": [x_target, y_target]
+            })
+        else:
+            print(f"[A11y Pipeline] No native accessibility node at ({x_target}, {y_target}). Degrading gracefully to visual coordinate navigation.")
+            synthetic_info = {
+                "type": "Visual Target",
+                "center": [x_target, y_target],
+                "text": command
+            }
+            announcement = CoordinateMapper.generate_synthetic_announcement(synthetic_info)
+            self.tree_broker.emit_accessibility_event("synthetic_focus", {
+                "announcement": announcement,
+                "coordinates": [x_target, y_target]
+            })
+
         # Inject precision click using closed-loop visual homing micro-agent
         anchor_pt = (x_target, y_target)
         final_x, final_y = self.execute_precision_click(
@@ -423,6 +448,7 @@ class AgentStateMachine:
             element_intent_label=command,
             anchor_pt=anchor_pt
         )
+
         
         self.benchmark.end_phase("Win32 Mouse Injection")
 
@@ -468,9 +494,13 @@ class AgentStateMachine:
         self.benchmark.end_phase("Closed-Loop Homing Tracer")
 
         # Inject verified high-precision click event
-        ctypes.windll.user32.SetCursorPos(final_x, final_y)
-        ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0) # LEFTDOWN
-        time.sleep(0.05)
-        ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0) # LEFTUP
+        if sys.platform == "win32" and hasattr(ctypes, "windll"):
+            ctypes.windll.user32.SetCursorPos(final_x, final_y)
+            ctypes.windll.user32.mouse_event(0x0002, 0, 0, 0, 0) # LEFTDOWN
+            time.sleep(0.05)
+            ctypes.windll.user32.mouse_event(0x0004, 0, 0, 0, 0) # LEFTUP
+        else:
+            print(f"[Mouse Injection] Simulated click at ({final_x}, {final_y})")
         
         return final_x, final_y
+
