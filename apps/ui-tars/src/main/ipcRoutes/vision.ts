@@ -222,7 +222,8 @@ Only return the final sentence, no other text.`;
 
         // 2. Voice Generation
         const storeModule = await import('@main/store/create');
-        const settings = storeModule.store.getState().settings;
+        const state = storeModule.store.getState() as any;
+        const settings = state.settings;
         const languageCode = settings?.voiceLanguage || 'en-US';
         const voiceId = settings?.voiceAccentUri || settings?.voiceAccent || undefined;
 

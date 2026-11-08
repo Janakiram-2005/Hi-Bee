@@ -52,7 +52,7 @@ jobs:
           chrome-version: 120
           install-dependencies: true
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
       - name: Run typecheck
         run: npm exec turbo run typecheck
       - name: Run test

@@ -55,24 +55,16 @@ interface ThoughtChainProps {
   steps: PredictionParsed[];
   hasSomImage: boolean;
   somImageHighlighted?: boolean;
-  index?: number;
-  onClick?: (index: number) => void;
+  onClick?: () => void;
 }
 
 export default function ThoughtChain({
   steps,
   onClick,
-  index,
   hasSomImage,
 }: ThoughtChainProps) {
   const reflectionStep = steps?.find((step) => step.reflection);
   const thoughtStep = steps?.find((step) => step.thought);
-
-  const handleClick = () => {
-    if (onClick && index !== undefined) {
-      onClick(index);
-    }
-  };
 
   return (
     <div>
@@ -88,12 +80,12 @@ export default function ThoughtChain({
         </div>
       )}
 
-      {steps?.map?.((step, i) => (
+      {steps?.map?.((step, index) => (
         <ThoughtStepCard
-          key={i}
+          key={index}
           step={step}
-          index={i}
-          onClick={handleClick}
+          index={index}
+          onClick={onClick}
           hasSomImage={hasSomImage}
         />
       ))}

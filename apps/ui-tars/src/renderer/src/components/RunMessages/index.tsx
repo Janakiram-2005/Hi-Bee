@@ -81,10 +81,10 @@ const RunMessages = () => {
     await api.setInstructions({ instructions: suggestion });
   };
 
-  const handleImageSelect = React.useCallback((index: number) => {
+  const handleImageSelect = async (index: number) => {
     setIsRightPanelOpen(true);
     setSelectImg(index);
-  }, []);
+  };
 
   const renderChatList = () => {
     return (
@@ -101,8 +101,7 @@ const RunMessages = () => {
                 return (
                   <ScreenshotMessage
                     key={`message-${idx}`}
-                    index={idx}
-                    onClick={handleImageSelect}
+                    onClick={() => handleImageSelect(idx)}
                   />
                 );
               }
@@ -135,8 +134,7 @@ const RunMessages = () => {
                   <ThoughtChain
                     steps={predictionParsed}
                     hasSomImage={!!screenshotBase64WithElementMarker}
-                    index={idx}
-                    onClick={handleImageSelect}
+                    onClick={() => handleImageSelect(idx)}
                   />
                 ) : null}
 
@@ -202,4 +200,4 @@ const RunMessages = () => {
   );
 };
 
-export default React.memo(RunMessages);
+export default RunMessages;
