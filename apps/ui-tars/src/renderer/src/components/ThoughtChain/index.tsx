@@ -17,7 +17,11 @@ interface ThoughtStepCardProps {
   hasSomImage: boolean;
 }
 
-const ThoughtStepCard = memo(function ThoughtStepCard({ step, onClick, hasSomImage }: ThoughtStepCardProps) {
+const ThoughtStepCard = memo(function ThoughtStepCard({
+  step,
+  onClick,
+  hasSomImage,
+}: ThoughtStepCardProps) {
   const ActionIcon = ActionIconMap[step?.action_type] || MousePointerClick;
 
   return (
