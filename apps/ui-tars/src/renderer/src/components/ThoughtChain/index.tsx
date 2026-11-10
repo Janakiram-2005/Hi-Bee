@@ -2,6 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
+import { memo } from 'react';
 import { MousePointerClick } from 'lucide-react';
 import { Button } from '@renderer/components/ui/button';
 
@@ -16,7 +17,7 @@ interface ThoughtStepCardProps {
   hasSomImage: boolean;
 }
 
-function ThoughtStepCard({ step, onClick, hasSomImage }: ThoughtStepCardProps) {
+const ThoughtStepCard = memo(function ThoughtStepCard({ step, onClick, hasSomImage }: ThoughtStepCardProps) {
   const ActionIcon = ActionIconMap[step?.action_type] || MousePointerClick;
 
   return (
@@ -49,7 +50,7 @@ function ThoughtStepCard({ step, onClick, hasSomImage }: ThoughtStepCardProps) {
       )}
     </>
   );
-}
+});
 
 interface ThoughtChainProps {
   steps: PredictionParsed[];
@@ -58,7 +59,7 @@ interface ThoughtChainProps {
   onClick?: () => void;
 }
 
-export default function ThoughtChain({
+const ThoughtChain = memo(function ThoughtChain({
   steps,
   onClick,
   hasSomImage,
@@ -91,4 +92,6 @@ export default function ThoughtChain({
       ))}
     </div>
   );
-}
+});
+
+export default ThoughtChain;
