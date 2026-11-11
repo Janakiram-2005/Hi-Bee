@@ -2,7 +2,7 @@
  * Copyright (c) 2025 Bytedance, Inc. and its affiliates.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { AlertCircle, Camera, ChevronDown, Loader2 } from 'lucide-react';
 import { ErrorStatusEnum } from '@ui-tars/shared/types';
 
@@ -14,15 +14,15 @@ import {
 } from '@renderer/components/ui/alert';
 import { Markdown } from '../markdown';
 
-export const HumanTextMessage = ({ text }: { text: string }) => {
+export const HumanTextMessage = memo(({ text }: { text: string }) => {
   return (
     <div className="flex gap-2 my-4 ml-4 items-center">
       <div className="ml-auto p-3 rounded-md bg-secondary">{text}</div>
     </div>
   );
-};
+});
 
-export const AssistantTextMessage = ({ text }: { text: string }) => {
+export const AssistantTextMessage = memo(({ text }: { text: string }) => {
   return (
     <div className="flex gap-2 mb-4 items-center">
       <div className="mr-auto px-3 pt-3 pb-1 rounded-md bg-sky-100">
@@ -30,13 +30,13 @@ export const AssistantTextMessage = ({ text }: { text: string }) => {
       </div>
     </div>
   );
-};
+});
 
 interface ScreenshotMessageProps {
   onClick?: () => void;
 }
 
-export const ScreenshotMessage = ({ onClick }: ScreenshotMessageProps) => {
+export const ScreenshotMessage = memo(({ onClick }: ScreenshotMessageProps) => {
   return (
     <Button
       variant="outline"
@@ -48,7 +48,7 @@ export const ScreenshotMessage = ({ onClick }: ScreenshotMessageProps) => {
       <span>Screenshot</span>
     </Button>
   );
-};
+});
 
 const getError = (text: string) => {
   let error: { message: string; stack: string };
@@ -108,7 +108,7 @@ export const ErrorMessage = ({ text }: { text: string }) => {
   );
 };
 
-export const LoadingText = ({ text }: { text: string }) => {
+export const LoadingText = memo(({ text }: { text: string }) => {
   return (
     <div className="mt-4">
       <div className="inline-flex items-center gap-2 text-muted-foreground animate-pulse">
@@ -117,4 +117,4 @@ export const LoadingText = ({ text }: { text: string }) => {
       </div>
     </div>
   );
-};
+});
