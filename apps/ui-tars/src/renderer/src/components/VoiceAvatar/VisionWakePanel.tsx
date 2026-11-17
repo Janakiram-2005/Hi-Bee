@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Eye, EyeOff, Video, VideoOff, AlertTriangle } from 'lucide-react';
 import {
   FilesetResolver,
@@ -6,6 +6,14 @@ import {
   FaceLandmarker,
   DrawingUtils,
 } from '@mediapipe/tasks-vision';
+import {
+  MultiHandHoldTracker,
+  HandLandmarkerResults,
+} from './multiHandHoldTracker';
+import {
+  getCanvasDprMetrics,
+  calculateDprPreviewCoordinates,
+} from '../../utils/gestureDpr';
 import {
   getWebcamCropMetrics,
   correctHandLandmarks,
@@ -18,9 +26,13 @@ import './VoiceAvatar.css';
 export function VisionWakePanel({
   autoStart = false,
   testGestures = null,
+  holdThresholdMs = 1000,
+  cooldownMs = 2000,
 }: {
   autoStart?: boolean;
   testGestures?: any[] | null;
+  holdThresholdMs?: number;
+  cooldownMs?: number;
 }) {
   const [isVisionEnabled, setIsVisionEnabled] = useState(autoStart);
   const [isPreviewEnabled, setIsPreviewEnabled] = useState(autoStart);
@@ -28,6 +40,7 @@ export function VisionWakePanel({
   const [engineReady, setEngineReady] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -46,6 +59,45 @@ export function VisionWakePanel({
     name: '',
     time: 0,
   });
+
+  const handleToggleMode = useCallback((handKey?: string) => {
+    const newTranslatingState = !isTranslatingRef.current;
+    isTranslatingRef.current = newTranslatingState;
+    setIsTranslating(newTranslatingState);
+    console.log(
+      `[VisionWake] Mode toggled: isTranslating=${newTranslatingState} by hand ${handKey}`,
+    );
+
+    if (!newTranslatingState && translationBufferRef.current.length > 0) {
+      window.electron?.ipcRenderer
+        ?.invoke('visionRoute.processGestureSentence', {
+          keywords: translationBufferRef.current,
+        })
+        .catch(console.error);
+      translationBufferRef.current = [];
+    }
+
+    if (canvasRef.current) {
+      canvasRef.current.style.boxShadow = newTranslatingState
+        ? '0 0 20px #a855f7'
+        : '0 0 20px #ef4444';
+      setTimeout(() => {
+        if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+      }, 1000);
+    }
+  }, []);
+
+  const trackerRef = useRef<MultiHandHoldTracker>(
+    new MultiHandHoldTracker({
+      holdDurationMs: holdThresholdMs,
+      cooldownMs: cooldownMs,
+      fingerExtensionRatio: 1.0,
+      frameDropGraceMs: 150,
+      onTrigger: (handKey) => {
+        handleToggleMode(handKey);
+      },
+    }),
+  );
   const openPalmHoldStartRef = useRef<number>(0);
   const smootherRef = useRef(new GestureStateSmoother(2, 3));
 
@@ -129,7 +181,7 @@ export function VisionWakePanel({
 
     loadGestures();
 
-    const unsubscribe = window.electron?.ipcRenderer?.on(
+    const unsubscribe = (window.electron?.ipcRenderer?.on as any)?.(
       'gesture:updated',
       loadGestures,
     );
@@ -193,6 +245,19 @@ export function VisionWakePanel({
           ) {
             lastVideoTimeRef.current = video.currentTime;
 
+            // Calculate display and DPR metrics
+            const dpr =
+              typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+            const dprMetrics = getCanvasDprMetrics(320, 240, dpr);
+
+            // Synchronize canvas buffer resolution with DPR scaling
+            if (
+              canvas.width !== dprMetrics.bufferWidth ||
+              canvas.height !== dprMetrics.bufferHeight
+            ) {
+              canvas.width = dprMetrics.bufferWidth;
+              canvas.height = dprMetrics.bufferHeight;
+            }
             // Detect
             const handResults = handLandmarkerRef.current.detectForVideo(
               video,
@@ -237,6 +302,35 @@ export function VisionWakePanel({
 
             // Process Hands
             if (handResults.landmarks && handResults.landmarks.length > 0) {
+              const holdResult = trackerRef.current.processFrame(
+                handResults as HandLandmarkerResults,
+                Date.now(),
+              );
+              setHoldProgress(
+                holdResult.isHolding ? holdResult.activeHoldProgress : 0,
+              );
+
+              // Dispatch global hold progress event for UI layers
+              window.dispatchEvent(
+                new CustomEvent('vision:hold-progress', {
+                  detail: {
+                    isHolding: holdResult.isHolding,
+                    progress: holdResult.activeHoldProgress,
+                    activeHandKey: holdResult.activeHandKey,
+                    inCooldown: holdResult.inCooldown,
+                  },
+                }),
+              );
+
+              // Dispatch primary finger state for gestures page
+              if (holdResult.primaryFingerState) {
+                window.dispatchEvent(
+                  new CustomEvent('vision:raw-hand-state', {
+                    detail: holdResult.primaryFingerState,
+                  }),
+                );
+              }
+
               for (const rawLandmarks of handResults.landmarks) {
                 // Correct coordinates for webcam aspect ratio cropping
                 const correctedLandmarks = correctHandLandmarks(
@@ -245,25 +339,37 @@ export function VisionWakePanel({
                 );
                 const boundsResult = checkHandBounds(correctedLandmarks);
 
+                // Calculate preview coordinates for canvas DPR scaling
+                const previewCoordinates = calculateDprPreviewCoordinates(
+                  correctedLandmarks,
+                  dprMetrics,
+                );
+
                 const drawingUtils = new DrawingUtils(ctx);
                 drawingUtils.drawConnectors(
                   rawLandmarks,
                   HandLandmarker.HAND_CONNECTIONS,
-                  { color: '#00FF00', lineWidth: 2 },
+                  {
+                    color: '#00FF00',
+                    lineWidth: Math.max(2, Math.round(2 * dprMetrics.dpr)),
+                  },
                 );
 
-                // Draw fingertips
-                for (let i = 0; i < rawLandmarks.length; i++) {
-                  const x = rawLandmarks[i].x * canvas.width;
-                  const y = rawLandmarks[i].y * canvas.height;
+                // Draw fingertips scaled for DPR
+                const radius = Math.max(4, Math.round(4 * dprMetrics.dpr));
+                for (let i = 0; i < previewCoordinates.length; i++) {
+                  const x = previewCoordinates[i].canvas.x;
+                  const y = previewCoordinates[i].canvas.y;
                   ctx.beginPath();
-                  ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                  ctx.arc(x, y, radius, 0, 2 * Math.PI);
                   if ([4, 8, 12, 16, 20].includes(i)) {
                     ctx.fillStyle = '#FF0000';
                   } else {
                     ctx.fillStyle = '#0000FF';
                   }
                   ctx.fill();
+                  ctx.lineWidth = Math.max(1, Math.round(1 * dprMetrics.dpr));
+                  ctx.strokeStyle = '#FFFFFF';
                   ctx.stroke();
                 }
 
@@ -285,8 +391,10 @@ export function VisionWakePanel({
                       ...currentState,
                       fingers: currentState,
                       landmarks: correctedLandmarks,
+                      previewCoordinates,
                       rawLandmarks,
                       inBounds: boundsResult.inBounds,
+                      dprMetrics,
                       data: correctedLandmarks,
                       cropMetrics,
                     },
@@ -422,6 +530,7 @@ export function VisionWakePanel({
                 }
               }
             } else {
+              // Smooth frame drop when no hands detected
               smootherRef.current.update(null, false);
             }
 
@@ -499,18 +608,22 @@ export function VisionWakePanel({
               );
 
               // Legacy trigger
-              if (isBlink || isNodDown) {
+              if (faceState.blink || faceState.nodDown) {
                 shouldWake = true;
               }
 
               if (faceResults.faceLandmarks) {
+                const facePointRadius = Math.max(
+                  1,
+                  Math.round(1.5 * dprMetrics.dpr),
+                );
                 for (const landmarks of faceResults.faceLandmarks) {
                   ctx.fillStyle = '#00FFFF';
                   for (let i = 0; i < landmarks.length; i += 10) {
                     const x = landmarks[i].x * canvas.width;
                     const y = landmarks[i].y * canvas.height;
                     ctx.beginPath();
-                    ctx.arc(x, y, 1, 0, 2 * Math.PI);
+                    ctx.arc(x, y, facePointRadius, 0, 2 * Math.PI);
                     ctx.fill();
                   }
                 }
@@ -697,6 +810,50 @@ export function VisionWakePanel({
         </div>
       )}
 
+      {holdProgress > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            padding: '8px',
+            background: 'rgba(59, 130, 246, 0.2)',
+            color: '#93c5fd',
+            borderRadius: '6px',
+            fontSize: '12px',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Hold to toggle mode...</span>
+            <span>{Math.round(holdProgress * 100)}%</span>
+          </div>
+          <div
+            style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round(holdProgress * 100)}%`,
+                height: '100%',
+                background: '#60a5fa',
+                transition: 'width 0.1s linear',
+              }}
+            ></div>
+          </div>
+        </div>
+      )}
       <video
         id="global-vision-video"
         ref={videoRef}
@@ -740,8 +897,18 @@ export function VisionWakePanel({
             <canvas
               id="global-vision-canvas"
               ref={canvasRef}
-              width={320}
-              height={240}
+              width={
+                320 *
+                (typeof window !== 'undefined'
+                  ? window.devicePixelRatio || 1
+                  : 1)
+              }
+              height={
+                240 *
+                (typeof window !== 'undefined'
+                  ? window.devicePixelRatio || 1
+                  : 1)
+              }
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           ) : (

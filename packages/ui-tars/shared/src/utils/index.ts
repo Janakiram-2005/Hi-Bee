@@ -4,5 +4,7 @@
  */
 
 export * from './format';
+export * from './gestureDpr';
 export * from './gestureLandmarks';
+export type { Point3D, FingerConfigState } from './gestureLandmarks';
 export { default as sleep } from './sleep';
