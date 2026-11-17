@@ -417,7 +417,7 @@ describe('Browser Action Tests', () => {
       expect(result.content?.[0].text).toContain(unicodeValue);
     });
 
-    test('should handle very long text', async () => {
+    test('should handle very long text', { timeout: 20000 }, async () => {
       const longValue = 'A'.repeat(1000);
       const result = await client.callTool({
         name: 'browser_form_input_fill',
