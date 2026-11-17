@@ -3,17 +3,15 @@ on:
     types: [opened, synchronize, reopened]
     branches:
       - '**'
-    paths-ignore:
-      - 'multimodal/**'
-      - 'hybrid_gui_agent/**'
-      - '.github/**'
+    paths:
+      - 'apps/**'
+      - 'packages/**'
   push:
     branches:
       - 'main'
-    paths-ignore:
-      - 'multimodal/**'
-      - 'hybrid_gui_agent/**'
-      - '.github/**'
+    paths:
+      - 'apps/**'
+      - 'packages/**'
 
 permissions:
   id-token: write
