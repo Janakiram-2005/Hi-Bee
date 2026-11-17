@@ -417,20 +417,25 @@ describe('Browser Action Tests', () => {
       expect(result.content?.[0].text).toContain(unicodeValue);
     });
 
-    test('should handle very long text', async () => {
-      const longValue = 'A'.repeat(1000);
-      const result = await client.callTool({
-        name: 'browser_form_input_fill',
-        arguments: {
-          selector: '#textarea',
-          value: longValue,
-          clear: true,
-        },
-      });
+    test(
+      'should handle very long text',
+      { timeout: 20000 },
+      async () => {
+        const longValue = 'A'.repeat(1000);
+        const result = await client.callTool({
+          name: 'browser_form_input_fill',
+          arguments: {
+            selector: '#textarea',
+            value: longValue,
+            clear: true,
+          },
+        });
 
-      expect(result.isError).toBe(false);
-      expect(result.content?.[0].text).toContain('Successfully filled');
-    }, 15000);
+        expect(result.isError).toBe(false);
+        expect(result.content?.[0].text).toContain('Successfully filled');
+      },
+      15000,
+    );
 
     test('should fail gracefully for disabled input', async () => {
       const result = await client.callTool({

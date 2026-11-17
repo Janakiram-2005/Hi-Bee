@@ -1,12 +1,29 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
+import { GestureRecognizer } from '@mediapipe/tasks-vision';
+import { AlertTriangle, RefreshCw, CheckCircle, Cpu } from 'lucide-react';
 import gestureDb from '../../const/gesture_db.json';
 import { useVoiceStore } from '../../store/voiceStore';
+import {
+  resolveVisionWasmFileset,
+  createGestureRecognizerWithFallback,
+} from '../../utils/visionLoader';
 import { SignLanguageBufferManager } from './bufferManager';
 
 export default function SignLanguagePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [recognizer, setRecognizer] = useState<GestureRecognizer | null>(null);
+  const [modelState, setModelState] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [engineSource, setEngineSource] = useState<'local' | 'cdn' | null>(
+    null,
+  );
+  const [engineDelegate, setEngineDelegate] = useState<'GPU' | 'CPU' | null>(
+    null,
+  );
+  const [retryKey, setRetryKey] = useState<number>(0);
+
   const [isWebcamRunning, setIsWebcamRunning] = useState(false);
   const [rawSigns, setRawSigns] = useState<string[]>([]);
   const [isAutoFlushActive, setIsAutoFlushActive] = useState(false);
@@ -111,73 +128,85 @@ export default function SignLanguagePage() {
     bufferManagerRef.current?.flush('manual');
   };
 
-  // Load MediaPipe GestureRecognizer
+  // Load MediaPipe GestureRecognizer with offline bundle and fallback
   useEffect(() => {
+    let active = true;
+    setModelState('loading');
+    setErrorMessage(null);
+
     const loadRecognizer = async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm',
+        console.info('[SignLanguage] Loading MediaPipe vision fileset...');
+        const { fileset, source } = await resolveVisionWasmFileset((msg) =>
+          console.info('[SignLanguage]', msg),
         );
-        const gestureRecognizer = await GestureRecognizer.createFromOptions(
-          vision,
-          {
-            baseOptions: {
-              modelAssetPath: '/models/custom_gestures.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-          },
-        );
-        setRecognizer(gestureRecognizer);
-      } catch (err) {
-        console.warn(
-          'Failed to load custom_gestures.task, falling back to standard gesture_recognizer.task:',
-          err,
-        );
-        // Fallback to standard model if custom_gestures.task is missing
-        try {
-          const vision = await FilesetResolver.forVisionTasks(
-            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm',
+
+        if (!active) return;
+        setEngineSource(source);
+
+        const { recognizer: rec, delegate } =
+          await createGestureRecognizerWithFallback(
+            fileset,
+            '/models/custom_gestures.task',
+            (msg) => console.info('[SignLanguage]', msg),
           );
-          const fallbackRecognizer = await GestureRecognizer.createFromOptions(
-            vision,
-            {
-              baseOptions: {
-                modelAssetPath:
-                  'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task',
-                delegate: 'GPU',
-              },
-              runningMode: 'VIDEO',
-              numHands: 2,
-            },
-          );
-          setRecognizer(fallbackRecognizer);
-        } catch (e) {
-          console.error('Failed to load fallback GestureRecognizer:', e);
+
+        if (!active) {
+          rec.close();
+          return;
         }
+
+        setRecognizer(rec);
+        setEngineDelegate(delegate);
+        setModelState('ready');
+        console.info(
+          `[SignLanguage] GestureRecognizer ready (${source === 'local' ? 'Local Bundle' : 'CDN'}, ${delegate} delegate).`,
+        );
+      } catch (err: any) {
+        if (!active) return;
+        console.error('[SignLanguage] Failed to load GestureRecognizer:', err);
+        setModelState('error');
+        setErrorMessage(
+          err?.message || 'Failed to initialize gesture recognition engine',
+        );
       }
     };
+
     loadRecognizer();
-  }, []);
+
+    return () => {
+      active = false;
+      recognizer?.close();
+    };
+  }, [retryKey]);
 
   // Webcam Setup
   useEffect(() => {
     if (!videoRef.current) return;
+    let stream: MediaStream | null = null;
+
     navigator.mediaDevices
       .getUserMedia({ video: true })
-      .then((stream) => {
+      .then((mediaStream) => {
+        stream = mediaStream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = mediaStream;
           setIsWebcamRunning(true);
         }
       })
-      .catch((err) => console.error('Error accessing webcam:', err));
+      .catch((err) =>
+        console.error('[SignLanguage] Error accessing webcam:', err),
+      );
 
     return () => {
-      if (videoRef.current?.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
+      if (stream) {
         stream.getTracks().forEach((track) => track.stop());
+      }
+      if (videoRef.current?.srcObject) {
+        (videoRef.current.srcObject as MediaStream)
+          .getTracks()
+          .forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
   }, []);
@@ -194,7 +223,7 @@ export default function SignLanguagePage() {
       }
 
       const video = videoRef.current;
-      if (video.currentTime !== lastVideoTime) {
+      if (video.currentTime !== lastVideoTime && video.readyState >= 2) {
         lastVideoTime = video.currentTime;
 
         try {
@@ -218,7 +247,7 @@ export default function SignLanguagePage() {
               }
             }
           }
-        } catch (err) {
+        } catch {
           // Ignore temporary frame errors
         }
       }
@@ -228,6 +257,12 @@ export default function SignLanguagePage() {
     renderLoop();
     return () => cancelAnimationFrame(animationFrameId);
   }, [isWebcamRunning, recognizer]);
+
+  const handleRetry = () => {
+    setModelState('loading');
+    setErrorMessage(null);
+    setRetryKey((k) => k + 1);
+  };
 
   return (
     <div
@@ -252,8 +287,40 @@ export default function SignLanguagePage() {
         <h2 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>
           Sign Language Translation
         </h2>
+
         {/* Status Indicators */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Engine status indicator */}
+          {modelState === 'ready' && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                background: 'rgba(30, 41, 59, 0.8)',
+                fontSize: '12px',
+                color: '#94a3b8',
+              }}
+            >
+              <CheckCircle size={14} style={{ color: '#4ade80' }} />
+              <span>AI Recognizer Ready</span>
+              <span
+                style={{
+                  color: '#38bdf8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                }}
+              >
+                <Cpu size={12} />
+                {engineSource === 'local' ? 'Local WASM' : 'CDN WASM'} •{' '}
+                {engineDelegate || 'GPU'}
+              </span>
+            </div>
+          )}
+
           {isFlushing ? (
             <span
               style={{
@@ -331,17 +398,74 @@ export default function SignLanguagePage() {
             transform: 'scaleX(-1)',
           }}
         />
-        {!recognizer && (
+
+        {modelState === 'loading' && (
           <div
             style={{
               position: 'absolute',
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              color: '#fff',
+              color: '#94a3b8',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
             }}
           >
-            Loading AI Model...
+            <RefreshCw
+              size={24}
+              className="animate-spin"
+              style={{ color: '#3b82f6' }}
+            />
+            <span>Loading AI Model (Offline Bundle)...</span>
+          </div>
+        )}
+
+        {modelState === 'error' && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: '#ef4444',
+              textAlign: 'center',
+              padding: '16px',
+              background: 'rgba(15, 23, 42, 0.9)',
+              borderRadius: '8px',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+              maxWidth: '80%',
+            }}
+          >
+            <AlertTriangle size={24} />
+            <span style={{ fontSize: '12px' }}>
+              {errorMessage || 'Failed to load AI model'}
+            </span>
+            <button
+              type="button"
+              onClick={handleRetry}
+              style={{
+                marginTop: '4px',
+                padding: '6px 14px',
+                background: '#2563eb',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <RefreshCw size={12} /> Retry Initialization
+            </button>
           </div>
         )}
         {lastDetectedSign && (
