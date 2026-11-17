@@ -135,7 +135,7 @@ export function VLMSettings({
     settings.presetSource.autoUpdate;
 
   const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+    resolver: (zodResolver as any)(formSchema),
     defaultValues: {
       vlmProvider: undefined,
       vlmBaseUrl: '',
