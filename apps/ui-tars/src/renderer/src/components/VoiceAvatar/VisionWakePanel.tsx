@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, Video, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, Video, VideoOff, AlertTriangle } from 'lucide-react';
 import {
   FilesetResolver,
   HandLandmarker,
@@ -35,7 +35,7 @@ export function VisionWakePanel({
 
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | undefined>(undefined);
   const lastVideoTimeRef = useRef<number>(-1);
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
@@ -130,7 +130,7 @@ export function VisionWakePanel({
     loadGestures();
 
     const unsubscribe = window.electron?.ipcRenderer?.on(
-      'gesture:updated',
+      'gesture:updated' as any,
       loadGestures,
     );
     return () => {
@@ -254,7 +254,7 @@ export function VisionWakePanel({
 
                 const drawingUtils = new DrawingUtils(ctx);
                 drawingUtils.drawConnectors(
-                  landmarks,
+                  landmarks as any,
                   HandLandmarker.HAND_CONNECTIONS,
                   { color: '#00FF00', lineWidth: 2 },
                 );

@@ -363,6 +363,29 @@ describe('Gesture State & Landmark Validation', () => {
     });
   });
 
+  describe('Distance and Face Landmark Utilities', () => {
+    it('calculates 2D and 3D Euclidean distances accurately', () => {
+      const p1 = { x: 0.2, y: 0.2, z: 0.0 };
+      const p2 = { x: 0.5, y: 0.6, z: 0.0 };
+      const p3 = { x: 0.2, y: 0.2, z: 0.5 };
+      expect(euclideanDistance2D(p1, p2)).toBeCloseTo(0.5);
+      expect(euclideanDistance3D(p1, p3)).toBeCloseTo(0.5);
+      expect(euclideanDistance2D(p1, { x: NaN, y: 0, z: 0 })).toBe(0);
+      expect(euclideanDistance3D(p1, { x: 0, y: 0, z: NaN })).toBe(0);
+    });
+
+    it('validates and sanitizes face landmarks correctly', () => {
+      expect(validateAndSanitizeFaceLandmarks(null)).toBeNull();
+      expect(validateAndSanitizeFaceLandmarks([])).toBeNull();
+      const validFace = new Array(468)
+        .fill(null)
+        .map(() => ({ x: 0.5, y: 0.5, z: 0.1 }));
+      const sanitized = validateAndSanitizeFaceLandmarks(validFace);
+      expect(sanitized).not.toBeNull();
+      expect(sanitized?.length).toBe(468);
+    });
+  });
+
   describe('Face Landmark & State Bounds Checks', () => {
     it('computes face state with bounds checks without division-by-zero', () => {
       const blendshapes = [

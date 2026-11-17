@@ -24,7 +24,6 @@ import { VisionWakePanel } from '../../components/VoiceAvatar/VisionWakePanel';
 import {
   extractSanitizedHandLandmarks,
   extractSanitizedFingers,
-  StrictFingerConfig,
 } from '../../utils/gestureState';
 
 interface FingerConfig {
