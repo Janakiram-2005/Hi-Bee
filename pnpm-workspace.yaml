@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
+  - '!apps/gesture-studio'
   - 'apps/agent-tars/src/*'
   - 'apps/ui-tars/src/*'
   - 'packages/ui-tars/**'
