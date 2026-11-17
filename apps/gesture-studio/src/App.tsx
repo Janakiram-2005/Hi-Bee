@@ -15,6 +15,12 @@ import {
   Radio,
   Sparkles,
 } from 'lucide-react';
+import {
+  getWebcamCropMetrics,
+  correctHandLandmarks,
+  checkHandBounds,
+  type Point3D,
+} from './gestureLandmarks';
 
 function App() {
   const [appMode, setAppMode] = useState<'studio' | 'translator'>('studio');
@@ -124,7 +130,7 @@ function App() {
       .map((item) => item.data);
     const features: number[] = [];
     if (handStates.length > 0) {
-      const avgLandmarks: any[] = [];
+      const avgLandmarks: Point3D[] = [];
       for (let i = 0; i < 21; i++) {
         let sumX = 0,
           sumY = 0,
@@ -134,7 +140,7 @@ function App() {
           if (frame && frame.length === 21) {
             sumX += frame[i].x;
             sumY += frame[i].y;
-            sumZ += frame[i].z;
+            sumZ += frame[i].z || 0;
             count++;
           }
         }
@@ -151,11 +157,15 @@ function App() {
 
       if (avgLandmarks.length === 21 && avgLandmarks.some((lm) => lm.x !== 0)) {
         const dists: number[] = [];
+        // Studio view container has 4:3 aspect ratio (320x240)
+        const aspectRatio = 4 / 3;
         for (let i = 0; i < 21; i++) {
           for (let j = i + 1; j < 21; j++) {
-            const dx = avgLandmarks[i].x - avgLandmarks[j].x;
+            const dx = (avgLandmarks[i].x - avgLandmarks[j].x) * aspectRatio;
             const dy = avgLandmarks[i].y - avgLandmarks[j].y;
-            const dz = avgLandmarks[i].z - avgLandmarks[j].z;
+            const dz =
+              ((avgLandmarks[i].z || 0) - (avgLandmarks[j].z || 0)) *
+              aspectRatio;
             dists.push(Math.sqrt(dx * dx + dy * dy + dz * dz));
           }
         }
@@ -216,10 +226,22 @@ function App() {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 16 / 9 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
@@ -260,9 +282,19 @@ function App() {
             performance.now(),
           );
 
-          let handData = null;
+          let handData: any = null;
           if (results.landmarks && results.landmarks.length > 0) {
-            handData = results.landmarks[0]; // Array of 21 {x, y, z} coordinates
+            const rawLandmarks = results.landmarks[0]; // Array of 21 {x, y, z} coordinates
+            const vWidth = videoRef.current.videoWidth || 640;
+            const vHeight = videoRef.current.videoHeight || 480;
+            // Target is 4:3 in Studio mode (320x240 container)
+            const cropMetrics = getWebcamCropMetrics(vWidth, vHeight, 4 / 3);
+            const correctedLandmarks = correctHandLandmarks(
+              rawLandmarks,
+              cropMetrics,
+            );
+            const boundsResult = checkHandBounds(correctedLandmarks);
+            handData = boundsResult.inBounds ? correctedLandmarks : null;
           }
 
           landmarksTimelineRef.current.push({
@@ -347,10 +379,21 @@ function App() {
 
     const startTranslator = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              aspectRatio: { ideal: 16 / 9 },
+            },
+            audio: false,
+          });
+        } catch {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
@@ -380,48 +423,66 @@ function App() {
                 performance.now(),
               );
 
-              let handData = null;
+              let handData: any = null;
               if (results.landmarks && results.landmarks.length > 0) {
-                handData = results.landmarks[0]; // Array of 21 {x, y, z} coordinates
+                const rawLandmarks = results.landmarks[0];
+                const vWidth = videoRef.current.videoWidth || 640;
+                const vHeight = videoRef.current.videoHeight || 480;
+                const screenAspect =
+                  (window.innerWidth || 16) / (window.innerHeight || 9);
+                const cropMetrics = getWebcamCropMetrics(
+                  vWidth,
+                  vHeight,
+                  screenAspect,
+                );
+                const correctedLandmarks = correctHandLandmarks(
+                  rawLandmarks,
+                  cropMetrics,
+                );
+                const boundsResult = checkHandBounds(correctedLandmarks);
 
-                // Palm Detection Heuristic
-                const isFingerOpen = (tipIdx: number, pipIdx: number) =>
-                  handData[tipIdx].y < handData[pipIdx].y;
-                // If the 4 main fingers are pointed straight up, consider it a Palm
-                const isPalm =
-                  isFingerOpen(8, 6) &&
-                  isFingerOpen(12, 10) &&
-                  isFingerOpen(16, 14) &&
-                  isFingerOpen(20, 18);
+                if (boundsResult.inBounds) {
+                  handData = correctedLandmarks;
 
-                if (isPalm && Date.now() - lastPalmTimeRef.current > 3000) {
-                  const words = sentenceWordsRef.current;
-                  if (words.length > 0) {
-                    lastPalmTimeRef.current = Date.now();
-                    console.log(
-                      '[App] Palm detected! Triggering sentence parsing for:',
-                      words,
-                    );
-                    setTranslationLog((prev) => [
-                      ...prev,
-                      {
-                        time: new Date().toLocaleTimeString(),
-                        text: `[PALM] Sending: ${words.join(' ')}`,
-                      },
-                    ]);
+                  // Palm Detection Heuristic with bounds and aspect ratio check
+                  const isFingerOpen = (tipIdx: number, pipIdx: number) =>
+                    handData[tipIdx].y < handData[pipIdx].y;
+                  // If the 4 main fingers are pointed straight up, consider it a Palm
+                  const isPalm =
+                    isFingerOpen(8, 6) &&
+                    isFingerOpen(12, 10) &&
+                    isFingerOpen(16, 14) &&
+                    isFingerOpen(20, 18);
 
-                    fetch('http://127.0.0.1:8765/status', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        event: 'hibee:gesture-sentence',
-                        data: { words },
-                      }),
-                    }).catch((e) =>
-                      console.error('Failed to send to UI-TARS:', e),
-                    );
+                  if (isPalm && Date.now() - lastPalmTimeRef.current > 3000) {
+                    const words = sentenceWordsRef.current;
+                    if (words.length > 0) {
+                      lastPalmTimeRef.current = Date.now();
+                      console.log(
+                        '[App] Palm detected! Triggering sentence parsing for:',
+                        words,
+                      );
+                      setTranslationLog((prev) => [
+                        ...prev,
+                        {
+                          time: new Date().toLocaleTimeString(),
+                          text: `[PALM] Sending: ${words.join(' ')}`,
+                        },
+                      ]);
 
-                    sentenceWordsRef.current = [];
+                      fetch('http://127.0.0.1:8765/status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          event: 'hibee:gesture-sentence',
+                          data: { words },
+                        }),
+                      }).catch((e) =>
+                        console.error('Failed to send to UI-TARS:', e),
+                      );
+
+                      sentenceWordsRef.current = [];
+                    }
                   }
                 }
               }
@@ -1054,7 +1115,7 @@ function App() {
             style={{
               width: '100%',
               height: '100%',
-              objectFit: 'cover',
+              objectFit: 'contain',
               transform: 'scaleX(-1)',
             }}
           />
@@ -1086,7 +1147,7 @@ function App() {
                 style={{
                   width: '100%',
                   height: '100%',
-                  objectFit: 'cover',
+                  objectFit: 'contain',
                   transform: 'scaleX(-1)',
                 }}
               />

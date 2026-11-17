@@ -18,6 +18,7 @@ from .local_brain import (
     calculate_landmark_distance,
     detect_hand_gestures,
     detect_face_gestures,
+)
 try:
     from .coordinate_mapper import CoordinateMapper
 except Exception:
