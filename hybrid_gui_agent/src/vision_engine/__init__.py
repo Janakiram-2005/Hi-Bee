@@ -8,6 +8,16 @@ try:
 except Exception:
     OpenVINOTagger = None
 
+from .coordinate_mapper import CoordinateMapper
+from .homing_agent import VisualHomingAgent
+from .local_brain import (
+    LocalVisionBrain,
+    Base64FrameThrottler,
+    get_finger_states,
+    check_hand_bounds,
+    calculate_landmark_distance,
+    detect_hand_gestures,
+    detect_face_gestures,
 try:
     from .coordinate_mapper import CoordinateMapper
 except Exception:
@@ -34,6 +44,13 @@ __all__ = [
     "OpenVINOTagger",
     "CoordinateMapper",
     "VisualHomingAgent",
+    "LocalVisionBrain",
+    "Base64FrameThrottler",
+    "get_finger_states",
+    "check_hand_bounds",
+    "calculate_landmark_distance",
+    "detect_hand_gestures",
+    "detect_face_gestures",
     "calculate_gesture_specificity",
     "rank_gestures_by_specificity",
     "detect_hand_gestures",
