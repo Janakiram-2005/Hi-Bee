@@ -11,8 +11,8 @@ import {
   FingerState,
 } from './gestureRecognition';
 
-describe('gestureRecognition', () => {
-  it('calculates gesture specificity correctly', () => {
+describe('Gesture Recognition', () => {
+  it('calculates gesture specificity', () => {
     const specific5: Gesture = {
       name: 'L-Shape',
       action: 'volume_up',
@@ -143,7 +143,6 @@ describe('gestureRecognition', () => {
       configuredGestures,
     );
 
-    // Both match, but specificRule MUST be selected!
     expect(rankedMatches.length).toBe(2);
     expect(matchedGesture).not.toBeNull();
     expect(matchedGesture?.id).toBe('g-lshape');
@@ -151,7 +150,7 @@ describe('gestureRecognition', () => {
     expect(specificity).toBe(5);
   });
 
-  it('validates threshold and landmark bounds', () => {
+  it('validates threshold bounds', () => {
     expect(validateGestureThreshold(null, 1000)).toBe(1000);
     expect(
       validateGestureThreshold({ name: 'g', action: 'a', threshold: 800 }),
@@ -187,7 +186,7 @@ describe('gestureRecognition', () => {
     expect(validateLandmarkBounds(nanLandmarks)).toBe(false);
   });
 
-  it('tracks state machine lifecycle and transition boundaries', () => {
+  it('handles state machine lifecycle and transition boundaries', () => {
     const sm = new GestureHoldStateMachine(1000, 1500);
 
     const gesture: Gesture = {
