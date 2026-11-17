@@ -11,8 +11,8 @@ import {
   FingerState,
 } from './gestureRecognition';
 
-describe('Gesture Recognition Unit Tests', () => {
-  it('Test 1: Specificity calculation', () => {
+describe('Gesture Recognition', () => {
+  it('calculates gesture specificity', () => {
     const specific5: Gesture = {
       name: 'L-Shape',
       action: 'volume_up',
@@ -58,7 +58,7 @@ describe('Gesture Recognition Unit Tests', () => {
     );
   });
 
-  it('Test 2: Specificity ranking', () => {
+  it('ranks gestures by specificity', () => {
     const g1: Gesture = {
       name: 'Broad',
       action: 'a1',
@@ -100,7 +100,7 @@ describe('Gesture Recognition Unit Tests', () => {
     expect(names[4]).toBe('Broad');
   });
 
-  it('Test 3: Unranked evaluation swallowing resolved', () => {
+  it('resolves unranked evaluation swallowing', () => {
     const broadRule: Gesture = {
       id: 'g-broad',
       name: 'Broad Rule',
@@ -127,6 +127,7 @@ describe('Gesture Recognition Unit Tests', () => {
       },
     };
 
+    // Broad rule placed FIRST in configured array
     const configuredGestures = [broadRule, specificRule];
 
     const currentStates: Record<FingerName, FingerState> = {
@@ -149,7 +150,7 @@ describe('Gesture Recognition Unit Tests', () => {
     expect(specificity).toBe(5);
   });
 
-  it('Test 4: Threshold bounds validation', () => {
+  it('validates threshold bounds', () => {
     expect(validateGestureThreshold(null, 1000)).toBe(1000);
     expect(
       validateGestureThreshold({ name: 'g', action: 'a', threshold: 800 }),
@@ -185,7 +186,7 @@ describe('Gesture Recognition Unit Tests', () => {
     expect(validateLandmarkBounds(nanLandmarks)).toBe(false);
   });
 
-  it('Test 5: State Machine Lifecycle and Transition Boundaries', () => {
+  it('handles state machine lifecycle and transition boundaries', () => {
     const sm = new GestureHoldStateMachine(1000, 1500);
 
     const gesture: Gesture = {

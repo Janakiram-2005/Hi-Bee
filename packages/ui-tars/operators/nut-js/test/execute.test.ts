@@ -46,9 +46,14 @@ let currentMousePos = { x: 0, y: 0 };
 // Mock @computer-use/nut-js
 vi.mock('@computer-use/nut-js', async (importOriginal) => {
   const actual: any = await importOriginal();
+  let currentPos = new actual.Point(0, 0);
   return {
     mouse: {
       move: vi.fn(),
+      setPosition: vi.fn(async (p) => {
+        currentPos = p;
+      }),
+      getPosition: vi.fn(async () => currentPos),
       click: vi.fn(),
       setPosition: vi.fn().mockImplementation((point: any) => {
         currentMousePos = { x: point.x, y: point.y };

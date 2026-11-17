@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import './App.css';
 
 import {
+  predictRF,
+  extractFeaturesJS,
+  validateThreshold,
+} from './utils/rfInference';
+
+export { predictRF, extractFeaturesJS, validateThreshold };
+import {
   FilesetResolver,
   HandLandmarker,
   DrawingUtils,
@@ -15,7 +22,6 @@ import {
   Radio,
   Sparkles,
 } from 'lucide-react';
-import { extractFeaturesJS, predictRF } from './features';
 import {
   getWebcamCropMetrics,
   correctHandLandmarks,
@@ -45,6 +51,8 @@ function App() {
     { time: string; text: string }[]
   >([]);
   const [currentStatus, setCurrentStatus] = useState('Not Recognized');
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.5);
+  const [lastConfidence, setLastConfidence] = useState(0.0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -326,6 +334,7 @@ function App() {
                 videoRef.current,
                 performance.now(),
               );
+
               let handData: any = null;
               if (results.landmarks && results.landmarks.length > 0) {
                 const rawLandmarks = results.landmarks[0];
@@ -436,9 +445,14 @@ function App() {
 
           try {
             const features = extractFeaturesJS(rollingTimelineRef.current);
-            const data = predictRF(features, wordModelJson);
+            const data = predictRF(
+              features,
+              wordModelJson,
+              confidenceThreshold,
+            );
+            setLastConfidence(data.confidence);
 
-            if (data.confidence >= 0.5) {
+            if (data.isRecognized) {
               const label = String(data.prediction);
               setCurrentStatus(
                 `Recognized: ${label} (${(data.confidence * 100).toFixed(0)}%)`,
@@ -449,6 +463,9 @@ function App() {
                   label !== lastRecognizedRef.current.label ||
                   Date.now() - lastRecognizedRef.current.time > 2000
                 ) {
+                  console.log(
+                    `[Translator] Gesture recognized: ${label} (confidence: ${(data.confidence * 100).toFixed(1)}%, threshold: ${(confidenceThreshold * 100).toFixed(0)}%)`,
+                  );
                   setTranslationLog((prev) => [
                     ...prev,
                     { time: new Date().toLocaleTimeString(), text: label },
@@ -458,7 +475,11 @@ function App() {
                 }
               }
             } else {
-              setCurrentStatus('Not Recognized');
+              setCurrentStatus(
+                data.confidence > 0
+                  ? `Analyzing... (max: ${(data.confidence * 100).toFixed(0)}% < ${(confidenceThreshold * 100).toFixed(0)}%)`
+                  : 'Not Recognized',
+              );
             }
           } catch (e) {
             console.error('Inference interval error', e);
@@ -648,43 +669,100 @@ function App() {
             <ArrowLeft size={18} /> Exit HUD
           </button>
 
-          {/* Dynamic Status Island */}
+          {/* Dynamic Status Island & Confidence/Threshold Visual Indicators */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '12px',
-              background: currentStatus.startsWith('Recognized')
-                ? 'rgba(16, 185, 129, 0.2)'
-                : 'rgba(15, 23, 42, 0.6)',
-              backdropFilter: 'blur(20px)',
-              border: `1px solid ${currentStatus.startsWith('Recognized') ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
-              boxShadow: currentStatus.startsWith('Recognized')
-                ? '0 0 30px rgba(16, 185, 129, 0.2)'
-                : '0 10px 30px rgba(0,0,0,0.5)',
-              padding: '12px 30px',
-              borderRadius: '40px',
-              color: currentStatus.startsWith('Recognized')
-                ? '#a7f3d0'
-                : 'white',
-              fontWeight: 700,
-              fontSize: '18px',
-              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+              gap: '16px',
+              pointerEvents: 'auto',
             }}
           >
-            {currentStatus.startsWith('Recognized') ? (
-              <Activity size={20} color="#34d399" />
-            ) : (
-              <Radio
-                size={20}
-                color={translatorActive ? '#60a5fa' : '#ef4444'}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                background: currentStatus.startsWith('Recognized')
+                  ? 'rgba(16, 185, 129, 0.2)'
+                  : 'rgba(15, 23, 42, 0.6)',
+                backdropFilter: 'blur(20px)',
+                border: `1px solid ${currentStatus.startsWith('Recognized') ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
+                boxShadow: currentStatus.startsWith('Recognized')
+                  ? '0 0 30px rgba(16, 185, 129, 0.2)'
+                  : '0 10px 30px rgba(0,0,0,0.5)',
+                padding: '12px 30px',
+                borderRadius: '40px',
+                color: currentStatus.startsWith('Recognized')
+                  ? '#a7f3d0'
+                  : 'white',
+                fontWeight: 700,
+                fontSize: '18px',
+                transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+            >
+              {currentStatus.startsWith('Recognized') ? (
+                <Activity size={20} color="#34d399" />
+              ) : (
+                <Radio
+                  size={20}
+                  color={translatorActive ? '#60a5fa' : '#ef4444'}
+                />
+              )}
+              {currentStatus === 'Not Recognized'
+                ? translatorActive
+                  ? 'Analyzing Gestures...'
+                  : 'System Standby'
+                : currentStatus}
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                background: 'rgba(15, 23, 42, 0.6)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                padding: '10px 18px',
+                borderRadius: '20px',
+                fontSize: '13px',
+                color: '#cbd5e1',
+              }}
+            >
+              <span>
+                Threshold:{' '}
+                <strong>{(confidenceThreshold * 100).toFixed(0)}%</strong>
+              </span>
+              <input
+                type="range"
+                min="0.10"
+                max="0.95"
+                step="0.05"
+                value={confidenceThreshold}
+                onChange={(e) =>
+                  setConfidenceThreshold(
+                    validateThreshold(parseFloat(e.target.value)),
+                  )
+                }
+                style={{ width: '80px', cursor: 'pointer' }}
+                title="Gesture Confidence Threshold"
               />
-            )}
-            {currentStatus === 'Not Recognized'
-              ? translatorActive
-                ? 'Analyzing Gestures...'
-                : 'System Standby'
-              : currentStatus}
+              {lastConfidence > 0 && (
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color:
+                      lastConfidence >= confidenceThreshold
+                        ? '#34d399'
+                        : '#94a3b8',
+                  }}
+                >
+                  ({(lastConfidence * 100).toFixed(0)}%)
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
