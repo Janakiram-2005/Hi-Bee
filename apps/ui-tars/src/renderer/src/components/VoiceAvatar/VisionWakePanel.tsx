@@ -106,6 +106,16 @@ export function VisionWakePanel({
     name: '',
     time: 0,
   });
+  const openPalmHoldStartRef = useRef<number>(0);
+  const activeHoldRef = useRef<{
+    gestureId: string;
+    gesture: any;
+    startTime: number;
+    lastSeenTime: number;
+    triggered: boolean;
+    startWrist: { x: number; y: number };
+  } | null>(null);
+  const lastGestureTriggerTimeRef = useRef<Record<string, number>>({});
 
   const idleFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -174,8 +184,8 @@ export function VisionWakePanel({
     }),
   );
 
-  const smootherRef = useRef<GestureStateSmoother>(
-    new GestureStateSmoother(2, 3),
+  const smootherRef = useRef<DprGestureStateSmoother>(
+    new DprGestureStateSmoother(2, 3),
   );
 
   useEffect(() => {
@@ -287,7 +297,7 @@ export function VisionWakePanel({
 
     loadGestures();
 
-    const unsubscribe = (window.electron?.ipcRenderer?.on as any)?.(
+    const unsubscribe = (window.electron?.ipcRenderer as any)?.on?.(
       'gesture:updated',
       loadGestures,
     );
@@ -354,7 +364,6 @@ export function VisionWakePanel({
               canvas.width = dprMetrics.bufferWidth;
               canvas.height = dprMetrics.bufferHeight;
             }
-
             // Detect
             const handResults = handLandmarkerRef.current.detectForVideo(
               video,
@@ -530,6 +539,161 @@ export function VisionWakePanel({
                         detectedGesture = g;
                         break;
                       }
+                    }
+                  }
+
+                  // Temporal gesture dynamics & hold validation
+                  const now = Date.now();
+                  if (detectedGesture) {
+                    const configuredHoldDuration =
+                      detectedGesture.holdDuration || 800; // ms
+                    const wrist = previewCoordinates[0]?.canvas || {
+                      x: landmarks[0].x * canvas.width,
+                      y: landmarks[0].y * canvas.height,
+                    };
+
+                    const currentHold = activeHoldRef.current;
+                    if (
+                      currentHold &&
+                      currentHold.gestureId === detectedGesture.id
+                    ) {
+                      currentHold.lastSeenTime = now;
+                      const elapsed = now - currentHold.startTime;
+                      const progress = Math.min(
+                        1.0,
+                        elapsed / configuredHoldDuration,
+                      );
+
+                      // Immediate visual feedback: circular progress ring around wrist
+                      const wx = wrist.x;
+                      const wy = wrist.y;
+                      ctx.save();
+                      ctx.beginPath();
+                      ctx.arc(wx, wy, 26, 0, 2 * Math.PI);
+                      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                      ctx.lineWidth = 4;
+                      ctx.stroke();
+
+                      ctx.beginPath();
+                      ctx.arc(
+                        wx,
+                        wy,
+                        26,
+                        -Math.PI / 2,
+                        -Math.PI / 2 + progress * 2 * Math.PI,
+                      );
+                      ctx.strokeStyle = progress >= 1.0 ? '#22c55e' : '#38bdf8';
+                      ctx.lineWidth = 4;
+                      ctx.stroke();
+
+                      ctx.fillStyle = '#ffffff';
+                      ctx.font = 'bold 12px Inter, sans-serif';
+                      ctx.fillText(
+                        `${detectedGesture.name || 'Gesture'} (${Math.round(progress * 100)}%)`,
+                        wx + 34,
+                        wy + 5,
+                      );
+                      ctx.restore();
+
+                      // State boundary: trigger once threshold bound is reached
+                      if (
+                        !currentHold.triggered &&
+                        elapsed >= configuredHoldDuration
+                      ) {
+                        const lastTrigger =
+                          lastGestureTriggerTimeRef.current[
+                            detectedGesture.id
+                          ] || 0;
+                        if (now - lastTrigger > 1500) {
+                          currentHold.triggered = true;
+                          lastGestureTriggerTimeRef.current[
+                            detectedGesture.id
+                          ] = now;
+                          console.log(
+                            `[VisionWakePanel] Gesture state transition: HOLDING -> TRIGGERED: ${detectedGesture.name} (${detectedGesture.action}) held for ${elapsed}ms`,
+                          );
+                          window.dispatchEvent(
+                            new CustomEvent('vision:gesture-triggered', {
+                              detail: detectedGesture,
+                            }),
+                          );
+                          window.dispatchEvent(
+                            new CustomEvent('vision:gesture-state-change', {
+                              detail: {
+                                state: 'triggered',
+                                gesture: detectedGesture,
+                                elapsed,
+                              },
+                            }),
+                          );
+
+                          if (canvasRef.current) {
+                            canvasRef.current.style.boxShadow =
+                              '0 0 25px #22c55e';
+                            setTimeout(() => {
+                              if (canvasRef.current)
+                                canvasRef.current.style.boxShadow = 'none';
+                            }, 800);
+                          }
+                        }
+                      } else if (!currentHold.triggered) {
+                        window.dispatchEvent(
+                          new CustomEvent('vision:gesture-state-change', {
+                            detail: {
+                              state: 'holding',
+                              gesture: detectedGesture,
+                              progress,
+                              elapsed,
+                            },
+                          }),
+                        );
+                      }
+                    } else {
+                      // New gesture detected - start hold state if not on cooldown
+                      const lastTrigger =
+                        lastGestureTriggerTimeRef.current[detectedGesture.id] ||
+                        0;
+                      if (now - lastTrigger > 1500) {
+                        activeHoldRef.current = {
+                          gestureId: detectedGesture.id,
+                          gesture: detectedGesture,
+                          startTime: now,
+                          lastSeenTime: now,
+                          triggered: false,
+                          startWrist: { x: wrist.x, y: wrist.y },
+                        };
+                        console.log(
+                          `[VisionWakePanel] Gesture state transition: IDLE -> HOLDING: ${detectedGesture.name}`,
+                        );
+                        window.dispatchEvent(
+                          new CustomEvent('vision:gesture-state-change', {
+                            detail: {
+                              state: 'holding',
+                              gesture: detectedGesture,
+                              progress: 0,
+                              elapsed: 0,
+                            },
+                          }),
+                        );
+                      }
+                    }
+                  } else if (activeHoldRef.current) {
+                    // Fallback Scenario: Recover gracefully when gesture is interrupted
+                    if (now - activeHoldRef.current.lastSeenTime > 200) {
+                      if (!activeHoldRef.current.triggered) {
+                        console.log(
+                          `[VisionWakePanel] Gesture state transition: HOLDING -> IDLE (Interrupted): ${activeHoldRef.current.gesture.name}`,
+                        );
+                        window.dispatchEvent(
+                          new CustomEvent('vision:gesture-state-change', {
+                            detail: {
+                              state: 'interrupted',
+                              gesture: activeHoldRef.current.gesture,
+                            },
+                          }),
+                        );
+                      }
+                      activeHoldRef.current = null;
                     }
                   }
 
@@ -1181,7 +1345,6 @@ export function VisionWakePanel({
           </div>
         </div>
       )}
-
       <video
         id="global-vision-video"
         ref={videoRef}
