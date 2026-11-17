@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Eye, EyeOff, Video, VideoOff, AlertTriangle } from 'lucide-react';
 import {
   FilesetResolver,
@@ -6,14 +6,29 @@ import {
   FaceLandmarker,
   DrawingUtils,
 } from '@mediapipe/tasks-vision';
+import {
+  MultiHandHoldTracker,
+  HandLandmarkerResults,
+} from './multiHandHoldTracker';
+import {
+  getCanvasDprMetrics,
+  calculateDprPreviewCoordinates,
+  checkGestureBounds,
+  computeDprFingerStates,
+  DprGestureStateSmoother,
+} from '../../utils/gestureDpr';
 import './VoiceAvatar.css';
 
 export function VisionWakePanel({
   autoStart = false,
   testGestures = null,
+  holdThresholdMs = 1000,
+  cooldownMs = 2000,
 }: {
   autoStart?: boolean;
   testGestures?: any[] | null;
+  holdThresholdMs?: number;
+  cooldownMs?: number;
 }) {
   const [isVisionEnabled, setIsVisionEnabled] = useState(autoStart);
   const [isPreviewEnabled, setIsPreviewEnabled] = useState(autoStart);
@@ -21,6 +36,7 @@ export function VisionWakePanel({
   const [engineReady, setEngineReady] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,6 +65,49 @@ export function VisionWakePanel({
     startWrist: { x: number; y: number };
   } | null>(null);
   const lastGestureTriggerTimeRef = useRef<Record<string, number>>({});
+
+  const handleToggleMode = useCallback((handKey?: string) => {
+    const newTranslatingState = !isTranslatingRef.current;
+    isTranslatingRef.current = newTranslatingState;
+    setIsTranslating(newTranslatingState);
+    console.log(
+      `[VisionWake] Mode toggled: isTranslating=${newTranslatingState} by hand ${handKey}`,
+    );
+
+    if (!newTranslatingState && translationBufferRef.current.length > 0) {
+      window.electron?.ipcRenderer
+        ?.invoke('visionRoute.processGestureSentence', {
+          keywords: translationBufferRef.current,
+        })
+        .catch(console.error);
+      translationBufferRef.current = [];
+    }
+
+    if (canvasRef.current) {
+      canvasRef.current.style.boxShadow = newTranslatingState
+        ? '0 0 20px #a855f7'
+        : '0 0 20px #ef4444';
+      setTimeout(() => {
+        if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+      }, 1000);
+    }
+  }, []);
+
+  const trackerRef = useRef<MultiHandHoldTracker>(
+    new MultiHandHoldTracker({
+      holdDurationMs: holdThresholdMs,
+      cooldownMs: cooldownMs,
+      fingerExtensionRatio: 1.0,
+      frameDropGraceMs: 150,
+      onTrigger: (handKey) => {
+        handleToggleMode(handKey);
+      },
+    }),
+  );
+
+  const smootherRef = useRef<DprGestureStateSmoother>(
+    new DprGestureStateSmoother(2, 3),
+  );
 
   useEffect(() => {
     testGesturesRef.current = testGestures;
@@ -184,6 +243,19 @@ export function VisionWakePanel({
           ) {
             lastVideoTimeRef.current = video.currentTime;
 
+            // Calculate display and DPR metrics
+            const dpr =
+              typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+            const dprMetrics = getCanvasDprMetrics(320, 240, dpr);
+
+            // Synchronize canvas buffer resolution with DPR scaling
+            if (
+              canvas.width !== dprMetrics.bufferWidth ||
+              canvas.height !== dprMetrics.bufferHeight
+            ) {
+              canvas.width = dprMetrics.bufferWidth;
+              canvas.height = dprMetrics.bufferHeight;
+            }
             // Detect
             const handResults = handLandmarkerRef.current.detectForVideo(
               video,
@@ -223,331 +295,382 @@ export function VisionWakePanel({
 
             // Process Hands
             if (handResults.landmarks) {
+              const holdResult = trackerRef.current.processFrame(
+                handResults as HandLandmarkerResults,
+                Date.now(),
+              );
+              setHoldProgress(
+                holdResult.isHolding ? holdResult.activeHoldProgress : 0,
+              );
+
+              // Dispatch global hold progress event for UI layers
+              window.dispatchEvent(
+                new CustomEvent('vision:hold-progress', {
+                  detail: {
+                    isHolding: holdResult.isHolding,
+                    progress: holdResult.activeHoldProgress,
+                    activeHandKey: holdResult.activeHandKey,
+                    inCooldown: holdResult.inCooldown,
+                  },
+                }),
+              );
+
+              // Dispatch primary finger state for gestures page
+              if (holdResult.primaryFingerState) {
+                window.dispatchEvent(
+                  new CustomEvent('vision:raw-hand-state', {
+                    detail: holdResult.primaryFingerState,
+                  }),
+                );
+              }
+
               for (const landmarks of handResults.landmarks) {
+                // Calculate preview coordinates and check bounds
+                const previewCoordinates = calculateDprPreviewCoordinates(
+                  landmarks,
+                  dprMetrics,
+                );
+                const boundsResult = checkGestureBounds(landmarks);
+
                 const drawingUtils = new DrawingUtils(ctx);
                 drawingUtils.drawConnectors(
                   landmarks,
                   HandLandmarker.HAND_CONNECTIONS,
-                  { color: '#00FF00', lineWidth: 2 },
+                  {
+                    color: '#00FF00',
+                    lineWidth: Math.max(2, Math.round(2 * dprMetrics.dpr)),
+                  },
                 );
 
-                // Draw fingertips
+                // Draw fingertips scaled for DPR
+                const radius = Math.max(4, Math.round(4 * dprMetrics.dpr));
                 for (let i = 0; i < landmarks.length; i++) {
-                  const x = landmarks[i].x * canvas.width;
-                  const y = landmarks[i].y * canvas.height;
+                  const x = previewCoordinates[i].canvas.x;
+                  const y = previewCoordinates[i].canvas.y;
                   ctx.beginPath();
-                  ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                  ctx.arc(x, y, radius, 0, 2 * Math.PI);
                   if ([4, 8, 12, 16, 20].includes(i)) {
                     ctx.fillStyle = '#FF0000';
                   } else {
                     ctx.fillStyle = '#0000FF';
                   }
                   ctx.fill();
+                  ctx.lineWidth = Math.max(1, Math.round(1 * dprMetrics.dpr));
+                  ctx.strokeStyle = '#FFFFFF';
                   ctx.stroke();
                 }
 
-                // Compute Finger States (Improved heuristics)
-                const dist = (p1: any, p2: any) =>
-                  Math.sqrt(
-                    Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2),
-                  );
+                // Compute Finger States with aspect-corrected distance
+                const rawFingerState = computeDprFingerStates(
+                  landmarks,
+                  dprMetrics.aspectRatio,
+                );
+                const smoothed = smootherRef.current.update(
+                  rawFingerState,
+                  boundsResult.inBounds,
+                );
+                const currentState = smoothed.state || rawFingerState;
 
-                // For fingers: Tip should be further from wrist (0) than PIP (second joint)
-                const isFingerOpen = (tipIdx: number, pipIdx: number) =>
-                  dist(landmarks[tipIdx], landmarks[0]) >
-                  dist(landmarks[pipIdx], landmarks[0]);
-
-                // For thumb: Tip (4) should be further from Pinky MCP (17) than the Thumb IP (3) is from Pinky MCP (17)
-                const isThumbOpen =
-                  dist(landmarks[4], landmarks[17]) >
-                  dist(landmarks[3], landmarks[17]);
-
-                const currentState = {
-                  thumb: isThumbOpen ? 'open' : 'closed',
-                  index: isFingerOpen(8, 6) ? 'open' : 'closed',
-                  middle: isFingerOpen(12, 10) ? 'open' : 'closed',
-                  ring: isFingerOpen(16, 14) ? 'open' : 'closed',
-                  pinky: isFingerOpen(20, 18) ? 'open' : 'closed',
-                };
-
-                // Emit raw state so Gestures page can capture it
+                // Propagate corrected metrics across vision engine boundary
                 window.dispatchEvent(
                   new CustomEvent('vision:raw-hand-state', {
-                    detail: currentState,
+                    detail: {
+                      ...currentState,
+                      fingers: currentState,
+                      landmarks,
+                      previewCoordinates,
+                      inBounds: boundsResult.inBounds,
+                      dprMetrics,
+                      data: landmarks,
+                    },
                   }),
                 );
 
-                // Check for "Open Palm" (all 5 fingers open) to toggle translation mode
-                const isOpenPalm =
-                  currentState.thumb === 'open' &&
-                  currentState.index === 'open' &&
-                  currentState.middle === 'open' &&
-                  currentState.ring === 'open' &&
-                  currentState.pinky === 'open';
+                // Only evaluate interactive triggers if hand is within visible preview bounds
+                if (boundsResult.inBounds) {
+                  // Check for "Open Palm" (all 5 fingers open) to toggle translation mode
+                  const isOpenPalm =
+                    currentState.thumb === 'open' &&
+                    currentState.index === 'open' &&
+                    currentState.middle === 'open' &&
+                    currentState.ring === 'open' &&
+                    currentState.pinky === 'open';
 
-                if (isOpenPalm) {
-                  if (openPalmHoldStartRef.current === 0) {
-                    openPalmHoldStartRef.current = Date.now();
-                  } else if (Date.now() - openPalmHoldStartRef.current > 1000) {
-                    // Toggled!
-                    const newTranslatingState = !isTranslatingRef.current;
-                    isTranslatingRef.current = newTranslatingState;
-                    setIsTranslating(newTranslatingState);
-                    openPalmHoldStartRef.current = 0; // reset
-
-                    if (
-                      !newTranslatingState &&
-                      translationBufferRef.current.length > 0
+                  if (isOpenPalm) {
+                    if (openPalmHoldStartRef.current === 0) {
+                      openPalmHoldStartRef.current = Date.now();
+                    } else if (
+                      Date.now() - openPalmHoldStartRef.current >
+                      1000
                     ) {
-                      // Stopped translating -> Send buffer to backend
-                      window.electron?.ipcRenderer
-                        ?.invoke('visionRoute.processGestureSentence', {
-                          keywords: translationBufferRef.current,
-                        })
-                        .catch(console.error);
-                      translationBufferRef.current = []; // clear buffer
+                      // Toggled!
+                      const newTranslatingState = !isTranslatingRef.current;
+                      isTranslatingRef.current = newTranslatingState;
+                      setIsTranslating(newTranslatingState);
+                      openPalmHoldStartRef.current = 0; // reset
+
+                      if (
+                        !newTranslatingState &&
+                        translationBufferRef.current.length > 0
+                      ) {
+                        // Stopped translating -> Send buffer to backend
+                        window.electron?.ipcRenderer
+                          ?.invoke('visionRoute.processGestureSentence', {
+                            keywords: translationBufferRef.current,
+                          })
+                          .catch(console.error);
+                        translationBufferRef.current = []; // clear buffer
+                      }
+
+                      // Flash screen to indicate mode change
+                      if (canvasRef.current) {
+                        canvasRef.current.style.boxShadow = newTranslatingState
+                          ? '0 0 20px #a855f7'
+                          : '0 0 20px #ef4444';
+                        setTimeout(() => {
+                          if (canvasRef.current)
+                            canvasRef.current.style.boxShadow = 'none';
+                        }, 1000);
+                      }
+
+                      // Add cooldown so it doesn't instantly toggle back
+                      openPalmHoldStartRef.current = Date.now() + 2000;
                     }
-
-                    // Flash screen to indicate mode change
-                    if (canvasRef.current) {
-                      canvasRef.current.style.boxShadow = newTranslatingState
-                        ? '0 0 20px #a855f7'
-                        : '0 0 20px #ef4444';
-                      setTimeout(() => {
-                        if (canvasRef.current)
-                          canvasRef.current.style.boxShadow = 'none';
-                      }, 1000);
+                  } else {
+                    if (Date.now() > openPalmHoldStartRef.current) {
+                      openPalmHoldStartRef.current = 0;
                     }
-
-                    // Add cooldown so it doesn't instantly toggle back
-                    openPalmHoldStartRef.current = Date.now() + 2000;
                   }
-                } else {
-                  if (Date.now() > openPalmHoldStartRef.current) {
-                    openPalmHoldStartRef.current = 0;
-                  }
-                }
 
-                // Match against configured gestures
-                const gesturesToUse =
-                  testGesturesRef.current || configuredGesturesRef.current;
-                if (gesturesToUse && gesturesToUse.length > 0) {
-                  for (const g of gesturesToUse) {
-                    const match = [
-                      'thumb',
-                      'index',
-                      'middle',
-                      'ring',
-                      'pinky',
-                    ].every((finger) => {
-                      const req = g.fingers[finger];
-                      return (
-                        req === 'any' ||
-                        req ===
-                          currentState[finger as keyof typeof currentState]
+                  // Match against configured gestures
+                  const gesturesToUse =
+                    testGesturesRef.current || configuredGesturesRef.current;
+                  if (gesturesToUse && gesturesToUse.length > 0) {
+                    for (const g of gesturesToUse) {
+                      const match = [
+                        'thumb',
+                        'index',
+                        'middle',
+                        'ring',
+                        'pinky',
+                      ].every((finger) => {
+                        const req = g.fingers[finger];
+                        return (
+                          req === 'any' ||
+                          req ===
+                            currentState[finger as keyof typeof currentState]
+                        );
+                      });
+                      if (match) {
+                        detectedGesture = g;
+                        break;
+                      }
+                    }
+                  }
+
+                  // Temporal gesture dynamics & hold validation
+                  const now = Date.now();
+                  if (detectedGesture) {
+                    const configuredHoldDuration =
+                      detectedGesture.holdDuration || 800; // ms
+                    const wrist = previewCoordinates[0]?.canvas || {
+                      x: landmarks[0].x * canvas.width,
+                      y: landmarks[0].y * canvas.height,
+                    };
+
+                    const currentHold = activeHoldRef.current;
+                    if (
+                      currentHold &&
+                      currentHold.gestureId === detectedGesture.id
+                    ) {
+                      currentHold.lastSeenTime = now;
+                      const elapsed = now - currentHold.startTime;
+                      const progress = Math.min(
+                        1.0,
+                        elapsed / configuredHoldDuration,
                       );
-                    });
-                    if (match) {
-                      detectedGesture = g;
-                      break;
-                    }
-                  }
-                }
 
-                // Temporal gesture dynamics & hold validation
-                const now = Date.now();
-                if (detectedGesture) {
-                  const configuredHoldDuration =
-                    detectedGesture.holdDuration || 800; // ms
-                  const wrist = landmarks[0];
+                      // Immediate visual feedback: circular progress ring around wrist
+                      const wx = wrist.x;
+                      const wy = wrist.y;
+                      ctx.save();
+                      ctx.beginPath();
+                      ctx.arc(wx, wy, 26, 0, 2 * Math.PI);
+                      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                      ctx.lineWidth = 4;
+                      ctx.stroke();
 
-                  const currentHold = activeHoldRef.current;
-                  if (
-                    currentHold &&
-                    currentHold.gestureId === detectedGesture.id
-                  ) {
-                    currentHold.lastSeenTime = now;
-                    const elapsed = now - currentHold.startTime;
-                    const progress = Math.min(
-                      1.0,
-                      elapsed / configuredHoldDuration,
-                    );
+                      ctx.beginPath();
+                      ctx.arc(
+                        wx,
+                        wy,
+                        26,
+                        -Math.PI / 2,
+                        -Math.PI / 2 + progress * 2 * Math.PI,
+                      );
+                      ctx.strokeStyle = progress >= 1.0 ? '#22c55e' : '#38bdf8';
+                      ctx.lineWidth = 4;
+                      ctx.stroke();
 
-                    // Immediate visual feedback: circular progress ring around wrist
-                    const wx = wrist.x * canvas.width;
-                    const wy = wrist.y * canvas.height;
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.arc(wx, wy, 26, 0, 2 * Math.PI);
-                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-                    ctx.lineWidth = 4;
-                    ctx.stroke();
+                      ctx.fillStyle = '#ffffff';
+                      ctx.font = 'bold 12px Inter, sans-serif';
+                      ctx.fillText(
+                        `${detectedGesture.name || 'Gesture'} (${Math.round(progress * 100)}%)`,
+                        wx + 34,
+                        wy + 5,
+                      );
+                      ctx.restore();
 
-                    ctx.beginPath();
-                    ctx.arc(
-                      wx,
-                      wy,
-                      26,
-                      -Math.PI / 2,
-                      -Math.PI / 2 + progress * 2 * Math.PI,
-                    );
-                    ctx.strokeStyle = progress >= 1.0 ? '#22c55e' : '#38bdf8';
-                    ctx.lineWidth = 4;
-                    ctx.stroke();
+                      // State boundary: trigger once threshold bound is reached
+                      if (
+                        !currentHold.triggered &&
+                        elapsed >= configuredHoldDuration
+                      ) {
+                        const lastTrigger =
+                          lastGestureTriggerTimeRef.current[
+                            detectedGesture.id
+                          ] || 0;
+                        if (now - lastTrigger > 1500) {
+                          currentHold.triggered = true;
+                          lastGestureTriggerTimeRef.current[
+                            detectedGesture.id
+                          ] = now;
+                          console.log(
+                            `[VisionWakePanel] Gesture state transition: HOLDING -> TRIGGERED: ${detectedGesture.name} (${detectedGesture.action}) held for ${elapsed}ms`,
+                          );
+                          window.dispatchEvent(
+                            new CustomEvent('vision:gesture-triggered', {
+                              detail: detectedGesture,
+                            }),
+                          );
+                          window.dispatchEvent(
+                            new CustomEvent('vision:gesture-state-change', {
+                              detail: {
+                                state: 'triggered',
+                                gesture: detectedGesture,
+                                elapsed,
+                              },
+                            }),
+                          );
 
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = 'bold 12px Inter, sans-serif';
-                    ctx.fillText(
-                      `${detectedGesture.name || 'Gesture'} (${Math.round(progress * 100)}%)`,
-                      wx + 34,
-                      wy + 5,
-                    );
-                    ctx.restore();
-
-                    // State boundary: trigger once threshold bound is reached
-                    if (
-                      !currentHold.triggered &&
-                      elapsed >= configuredHoldDuration
-                    ) {
-                      const lastTrigger =
-                        lastGestureTriggerTimeRef.current[detectedGesture.id] ||
-                        0;
-                      if (now - lastTrigger > 1500) {
-                        currentHold.triggered = true;
-                        lastGestureTriggerTimeRef.current[detectedGesture.id] =
-                          now;
-                        console.log(
-                          `[VisionWakePanel] Gesture state transition: HOLDING -> TRIGGERED: ${detectedGesture.name} (${detectedGesture.action}) held for ${elapsed}ms`,
-                        );
-                        window.dispatchEvent(
-                          new CustomEvent('vision:gesture-triggered', {
-                            detail: detectedGesture,
-                          }),
-                        );
+                          if (canvasRef.current) {
+                            canvasRef.current.style.boxShadow =
+                              '0 0 25px #22c55e';
+                            setTimeout(() => {
+                              if (canvasRef.current)
+                                canvasRef.current.style.boxShadow = 'none';
+                            }, 800);
+                          }
+                        }
+                      } else if (!currentHold.triggered) {
                         window.dispatchEvent(
                           new CustomEvent('vision:gesture-state-change', {
                             detail: {
-                              state: 'triggered',
+                              state: 'holding',
                               gesture: detectedGesture,
+                              progress,
                               elapsed,
                             },
                           }),
                         );
-
-                        if (canvasRef.current) {
-                          canvasRef.current.style.boxShadow =
-                            '0 0 25px #22c55e';
-                          setTimeout(() => {
-                            if (canvasRef.current)
-                              canvasRef.current.style.boxShadow = 'none';
-                          }, 800);
-                        }
                       }
-                    } else if (!currentHold.triggered) {
-                      window.dispatchEvent(
-                        new CustomEvent('vision:gesture-state-change', {
-                          detail: {
-                            state: 'holding',
-                            gesture: detectedGesture,
-                            progress,
-                            elapsed,
-                          },
-                        }),
-                      );
+                    } else {
+                      // New gesture detected - start hold state if not on cooldown
+                      const lastTrigger =
+                        lastGestureTriggerTimeRef.current[detectedGesture.id] ||
+                        0;
+                      if (now - lastTrigger > 1500) {
+                        activeHoldRef.current = {
+                          gestureId: detectedGesture.id,
+                          gesture: detectedGesture,
+                          startTime: now,
+                          lastSeenTime: now,
+                          triggered: false,
+                          startWrist: { x: wrist.x, y: wrist.y },
+                        };
+                        console.log(
+                          `[VisionWakePanel] Gesture state transition: IDLE -> HOLDING: ${detectedGesture.name}`,
+                        );
+                        window.dispatchEvent(
+                          new CustomEvent('vision:gesture-state-change', {
+                            detail: {
+                              state: 'holding',
+                              gesture: detectedGesture,
+                              progress: 0,
+                              elapsed: 0,
+                            },
+                          }),
+                        );
+                      }
                     }
-                  } else {
-                    // New gesture detected - start hold state if not on cooldown
-                    const lastTrigger =
-                      lastGestureTriggerTimeRef.current[detectedGesture.id] ||
-                      0;
-                    if (now - lastTrigger > 1500) {
-                      activeHoldRef.current = {
-                        gestureId: detectedGesture.id,
-                        gesture: detectedGesture,
-                        startTime: now,
-                        lastSeenTime: now,
-                        triggered: false,
-                        startWrist: { x: wrist.x, y: wrist.y },
-                      };
-                      console.log(
-                        `[VisionWakePanel] Gesture state transition: IDLE -> HOLDING: ${detectedGesture.name}`,
-                      );
-                      window.dispatchEvent(
-                        new CustomEvent('vision:gesture-state-change', {
-                          detail: {
-                            state: 'holding',
-                            gesture: detectedGesture,
-                            progress: 0,
-                            elapsed: 0,
-                          },
-                        }),
-                      );
+                  } else if (activeHoldRef.current) {
+                    // Fallback Scenario: Recover gracefully when gesture is interrupted
+                    if (now - activeHoldRef.current.lastSeenTime > 200) {
+                      if (!activeHoldRef.current.triggered) {
+                        console.log(
+                          `[VisionWakePanel] Gesture state transition: HOLDING -> IDLE (Interrupted): ${activeHoldRef.current.gesture.name}`,
+                        );
+                        window.dispatchEvent(
+                          new CustomEvent('vision:gesture-state-change', {
+                            detail: {
+                              state: 'interrupted',
+                              gesture: activeHoldRef.current.gesture,
+                            },
+                          }),
+                        );
+                      }
+                      activeHoldRef.current = null;
                     }
                   }
-                } else if (activeHoldRef.current) {
-                  // Fallback Scenario: Recover gracefully when gesture is interrupted
-                  if (now - activeHoldRef.current.lastSeenTime > 200) {
-                    if (!activeHoldRef.current.triggered) {
-                      console.log(
-                        `[VisionWakePanel] Gesture state transition: HOLDING -> IDLE (Interrupted): ${activeHoldRef.current.gesture.name}`,
-                      );
-                      window.dispatchEvent(
-                        new CustomEvent('vision:gesture-state-change', {
-                          detail: {
-                            state: 'interrupted',
-                            gesture: activeHoldRef.current.gesture,
-                          },
-                        }),
-                      );
-                    }
-                    activeHoldRef.current = null;
-                  }
-                }
 
-                // If in translation mode, buffer the gesture
-                if (
-                  isTranslatingRef.current &&
-                  detectedGesture &&
-                  !isOpenPalm
-                ) {
-                  const label =
-                    detectedGesture.actionArg ||
-                    detectedGesture.name ||
-                    detectedGesture.label;
+                  // If in translation mode, buffer the gesture
                   if (
-                    label &&
-                    (label !== lastAddedGestureRef.current.name ||
-                      Date.now() - lastAddedGestureRef.current.time > 1500)
+                    isTranslatingRef.current &&
+                    detectedGesture &&
+                    !isOpenPalm
                   ) {
-                    translationBufferRef.current.push(label);
-                    lastAddedGestureRef.current = {
-                      name: label,
-                      time: Date.now(),
-                    };
+                    const label =
+                      detectedGesture.actionArg ||
+                      detectedGesture.name ||
+                      detectedGesture.label;
+                    if (
+                      label &&
+                      (label !== lastAddedGestureRef.current.name ||
+                        Date.now() - lastAddedGestureRef.current.time > 1500)
+                    ) {
+                      translationBufferRef.current.push(label);
+                      lastAddedGestureRef.current = {
+                        name: label,
+                        time: Date.now(),
+                      };
 
-                    // Brief flash to indicate word recorded
-                    if (canvasRef.current) {
-                      canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
-                      setTimeout(() => {
-                        if (canvasRef.current)
-                          canvasRef.current.style.boxShadow = 'none';
-                      }, 300);
+                      // Brief flash to indicate word recorded
+                      if (canvasRef.current) {
+                        canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
+                        setTimeout(() => {
+                          if (canvasRef.current)
+                            canvasRef.current.style.boxShadow = 'none';
+                        }, 300);
+                      }
                     }
                   }
-                }
 
-                // Fallback L-shape wake (if no config matched but matches L-shape roughly)
-                const thumbTip = landmarks[4];
-                const indexTip = landmarks[8];
-                const middleTip = landmarks[12];
-                if (
-                  !detectedGesture &&
-                  indexTip.y < middleTip.y - 0.1 &&
-                  Math.abs(thumbTip.y - indexTip.y) > 0.1
-                ) {
-                  shouldWake = true;
+                  // Fallback L-shape wake (if no config matched but matches L-shape roughly)
+                  const thumbTip = landmarks[4];
+                  const indexTip = landmarks[8];
+                  const middleTip = landmarks[12];
+                  if (
+                    !detectedGesture &&
+                    indexTip.y < middleTip.y - 0.1 &&
+                    Math.abs(thumbTip.y - indexTip.y) > 0.1
+                  ) {
+                    shouldWake = true;
+                  }
                 }
               }
+            } else {
+              // Smooth frame drop when no hands detected
+              smootherRef.current.update(null, false);
             }
 
             // Process Face
@@ -624,18 +747,22 @@ export function VisionWakePanel({
               );
 
               // Legacy trigger
-              if (isBlink || isNodDown) {
+              if (faceState.blink || faceState.nodDown) {
                 shouldWake = true;
               }
 
               if (faceResults.faceLandmarks) {
+                const facePointRadius = Math.max(
+                  1,
+                  Math.round(1.5 * dprMetrics.dpr),
+                );
                 for (const landmarks of faceResults.faceLandmarks) {
                   ctx.fillStyle = '#00FFFF';
                   for (let i = 0; i < landmarks.length; i += 10) {
                     const x = landmarks[i].x * canvas.width;
                     const y = landmarks[i].y * canvas.height;
                     ctx.beginPath();
-                    ctx.arc(x, y, 1, 0, 2 * Math.PI);
+                    ctx.arc(x, y, facePointRadius, 0, 2 * Math.PI);
                     ctx.fill();
                   }
                 }
@@ -810,6 +937,50 @@ export function VisionWakePanel({
         </div>
       )}
 
+      {holdProgress > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            padding: '8px',
+            background: 'rgba(59, 130, 246, 0.2)',
+            color: '#93c5fd',
+            borderRadius: '6px',
+            fontSize: '12px',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Hold to toggle mode...</span>
+            <span>{Math.round(holdProgress * 100)}%</span>
+          </div>
+          <div
+            style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round(holdProgress * 100)}%`,
+                height: '100%',
+                background: '#60a5fa',
+                transition: 'width 0.1s linear',
+              }}
+            ></div>
+          </div>
+        </div>
+      )}
       <video
         id="global-vision-video"
         ref={videoRef}
@@ -853,8 +1024,18 @@ export function VisionWakePanel({
             <canvas
               id="global-vision-canvas"
               ref={canvasRef}
-              width={320}
-              height={240}
+              width={
+                320 *
+                (typeof window !== 'undefined'
+                  ? window.devicePixelRatio || 1
+                  : 1)
+              }
+              height={
+                240 *
+                (typeof window !== 'undefined'
+                  ? window.devicePixelRatio || 1
+                  : 1)
+              }
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
           ) : (
