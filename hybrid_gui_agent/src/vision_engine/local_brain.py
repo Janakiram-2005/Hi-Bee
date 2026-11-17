@@ -10,6 +10,31 @@ import base64
 import os
 import math
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
+try:
+    from vision_engine.gesture_engine import (
+        get_finger_states,
+        detect_hand_gestures,
+        calculate_gesture_specificity,
+        rank_gestures_by_specificity,
+        validate_landmarks,
+        validate_hold_threshold,
+        GestureHoldTracker
+    )
+except ImportError:
+    from gesture_engine import (
+        get_finger_states,
+        detect_hand_gestures,
+        calculate_gesture_specificity,
+        rank_gestures_by_specificity,
+        validate_landmarks,
+        validate_hold_threshold,
+        GestureHoldTracker
+    )
+
 HAND_CONNECTIONS = frozenset([
   (0, 1), (1, 2), (2, 3), (3, 4),
   (0, 5), (5, 6), (6, 7), (7, 8),
