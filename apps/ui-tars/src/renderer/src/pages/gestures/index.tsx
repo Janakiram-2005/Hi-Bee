@@ -138,10 +138,22 @@ function DatasetStudio({ onSave }: { onSave?: () => void }) {
 
     try {
       landmarksTimelineRef.current = []; // reset timeline
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            aspectRatio: { ideal: 16 / 9 },
+          },
+          audio: false,
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -206,7 +218,7 @@ function DatasetStudio({ onSave }: { onSave?: () => void }) {
               autoPlay
               loop
               controls
-              className="w-full h-full object-cover transform scale-x-[-1]"
+              className="w-full h-full object-contain transform scale-x-[-1]"
             />
           </div>
           <div className="flex gap-2">
@@ -258,7 +270,7 @@ function DatasetStudio({ onSave }: { onSave?: () => void }) {
               ref={videoRef}
               autoPlay
               muted
-              className="w-full h-full object-cover transform scale-x-[-1]"
+              className="w-full h-full object-contain transform scale-x-[-1]"
             />
             <div className="absolute top-2 right-2 flex items-center gap-1 bg-red-500/20 text-red-400 text-[10px] px-2 py-0.5 rounded-full border border-red-500/50 animate-pulse">
               <div className="size-2 rounded-full bg-red-500" /> Recording...

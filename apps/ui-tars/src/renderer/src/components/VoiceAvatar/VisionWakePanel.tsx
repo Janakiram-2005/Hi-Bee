@@ -26,10 +26,14 @@ import {
 import {
   getCanvasDprMetrics,
   calculateDprPreviewCoordinates,
-  checkGestureBounds,
-  computeDprFingerStates,
-  DprGestureStateSmoother,
 } from '../../utils/gestureDpr';
+import {
+  getWebcamCropMetrics,
+  correctHandLandmarks,
+  checkHandBounds,
+  computeFingerStates,
+  GestureStateSmoother,
+} from '../../utils/gestureLandmarks';
 import {
   resolveVisionWasmFileset,
   createHandLandmarkerWithFallback,
@@ -142,8 +146,8 @@ export function VisionWakePanel({
     }),
   );
 
-  const smootherRef = useRef<DprGestureStateSmoother>(
-    new DprGestureStateSmoother(2, 3),
+  const smootherRef = useRef<GestureStateSmoother>(
+    new GestureStateSmoother(2, 3),
   );
 
   useEffect(() => {
@@ -360,8 +364,13 @@ export function VisionWakePanel({
             let shouldWake = false;
             let detectedGesture: any = null;
 
+            // Aspect ratio crop metrics
+            const vWidth = video.videoWidth || canvas.width || 640;
+            const vHeight = video.videoHeight || canvas.height || 480;
+            const cropMetrics = getWebcamCropMetrics(vWidth, vHeight, 16 / 9);
+
             // Process Hands
-            if (handResults.landmarks) {
+            if (handResults.landmarks && handResults.landmarks.length > 0) {
               const holdResult = trackerRef.current.processFrame(
                 handResults as HandLandmarkerResults,
                 Date.now(),
@@ -391,27 +400,33 @@ export function VisionWakePanel({
                 );
               }
 
-              for (const landmarks of handResults.landmarks) {
-                // Calculate preview coordinates and check bounds
+              for (const rawLandmarks of handResults.landmarks) {
+                // Correct coordinates for webcam aspect ratio cropping
+                const correctedLandmarks = correctHandLandmarks(
+                  rawLandmarks,
+                  cropMetrics,
+                );
+                const boundsResult = checkHandBounds(correctedLandmarks);
+
+                // Calculate preview coordinates for canvas DPR scaling
                 const previewCoordinates = calculateDprPreviewCoordinates(
-                  landmarks,
+                  correctedLandmarks,
                   dprMetrics,
                 );
-                const boundsResult = checkGestureBounds(landmarks);
 
                 const drawingUtils = new DrawingUtils(ctx);
                 drawingUtils.drawConnectors(
-                  landmarks,
+                  rawLandmarks,
                   HandLandmarker.HAND_CONNECTIONS,
                   {
                     color: '#00FF00',
-                    lineWidth: Math.max(2, Math.round(2 * dprMetrics.dpr)),
+                    lineWidth: 2,
                   },
                 );
 
                 // Draw fingertips scaled for DPR
                 const radius = Math.max(4, Math.round(4 * dprMetrics.dpr));
-                for (let i = 0; i < landmarks.length; i++) {
+                for (let i = 0; i < previewCoordinates.length; i++) {
                   const x = previewCoordinates[i].canvas.x;
                   const y = previewCoordinates[i].canvas.y;
                   ctx.beginPath();
@@ -427,10 +442,10 @@ export function VisionWakePanel({
                   ctx.stroke();
                 }
 
-                // Compute Finger States with aspect-corrected distance
-                const rawFingerState = computeDprFingerStates(
-                  landmarks,
-                  dprMetrics.aspectRatio,
+                // Compute Finger States with aspect-corrected metric distance
+                const rawFingerState = computeFingerStates(
+                  correctedLandmarks,
+                  cropMetrics.targetAspectRatio,
                 );
                 const smoothed = smootherRef.current.update(
                   rawFingerState,
@@ -444,11 +459,13 @@ export function VisionWakePanel({
                     detail: {
                       ...currentState,
                       fingers: currentState,
-                      landmarks,
+                      landmarks: correctedLandmarks,
                       previewCoordinates,
+                      rawLandmarks,
                       inBounds: boundsResult.inBounds,
                       dprMetrics,
-                      data: landmarks,
+                      data: correctedLandmarks,
+                      cropMetrics,
                     },
                   }),
                 );
@@ -521,13 +538,15 @@ export function VisionWakePanel({
                   }
 
                   // Fallback L-shape wake (if no config matched but matches L-shape roughly)
-                  const thumbTip = landmarks[4];
-                  const indexTip = landmarks[8];
-                  const middleTip = landmarks[12];
+                  const thumbTip = correctedLandmarks[4];
+                  const indexTip = correctedLandmarks[8];
+                  const middleTip = correctedLandmarks[12];
                   if (
                     !detectedGesture &&
                     indexTip.y < middleTip.y - 0.1 &&
-                    Math.abs(thumbTip.y - indexTip.y) > 0.1
+                    Math.abs(
+                      (thumbTip.x - indexTip.x) * cropMetrics.targetAspectRatio,
+                    ) > 0.1
                   ) {
                     shouldWake = true;
                   }
