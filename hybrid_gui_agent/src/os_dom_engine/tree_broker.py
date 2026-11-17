@@ -5,6 +5,10 @@ import sys
 import time
 import ctypes
 from typing import List, Dict, Any, Optional
+try:
+    import winreg
+except ImportError:
+    winreg = None
 from .win32_api import get_window_rect
 
 class TreeBroker:
@@ -21,7 +25,7 @@ class TreeBroker:
 
     def are_desktop_icons_hidden(self) -> bool:
         """Check if Windows desktop icons are hidden in the registry."""
-        if sys.platform != "win32":
+        if not winreg:
             return False
         try:
             import winreg
