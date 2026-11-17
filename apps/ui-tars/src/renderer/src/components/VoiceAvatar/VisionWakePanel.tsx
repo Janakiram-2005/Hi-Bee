@@ -34,7 +34,6 @@ import {
   createHandLandmarkerWithFallback,
   createFaceLandmarkerWithFallback,
 } from '../../utils/visionLoader';
-import { GestureStateMachine, GestureConfig } from '../../utils/gestureEngine';
 import './VoiceAvatar.css';
 
 export function VisionWakePanel({
@@ -63,10 +62,6 @@ export function VisionWakePanel({
 
   const [isTranslating, setIsTranslating] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
-  const [activeHoldProgress, setActiveHoldProgress] = useState<number>(0);
-  const [activeCandidate, setActiveCandidate] = useState<GestureConfig | null>(
-    null,
-  );
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -78,13 +73,6 @@ export function VisionWakePanel({
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
   const testGesturesRef = useRef<any[] | null>(null);
-
-  const gestureStateMachineRef = useRef<GestureStateMachine>(
-    new GestureStateMachine({
-      minHoldDurationMs: 250,
-      cooldownDurationMs: 1500,
-    }),
-  );
 
   const isTranslatingRef = useRef(false);
   const translationBufferRef = useRef<string[]>([]);
@@ -364,7 +352,6 @@ export function VisionWakePanel({
 
             let shouldWake = false;
             let detectedGesture: any = null;
-            let frameCandidate: GestureConfig | null = null;
 
             // Aspect ratio crop metrics
             const vWidth = video.videoWidth || canvas.width || 640;
@@ -1046,66 +1033,13 @@ export function VisionWakePanel({
               </button>
             </div>
           ) : engineReady ? (
-            <>
-              <canvas
-                id="global-vision-canvas"
-                ref={canvasRef}
-                width={320}
-                height={240}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-
-              {/* Immediate feedback for gesture holding */}
-              {activeHoldProgress > 0 && activeCandidate && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: '8px',
-                    left: '8px',
-                    right: '8px',
-                    background: 'rgba(15, 23, 42, 0.85)',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(59, 130, 246, 0.4)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: '11px',
-                      color: '#93c5fd',
-                    }}
-                  >
-                    <span>
-                      Holding: {activeCandidate.name || activeCandidate.id}
-                    </span>
-                    <span>{Math.round(activeHoldProgress * 100)}%</span>
-                  </div>
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '4px',
-                      background: 'rgba(255, 255, 255, 0.2)',
-                      borderRadius: '2px',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${activeHoldProgress * 100}%`,
-                        height: '100%',
-                        background: '#3b82f6',
-                        transition: 'width 0.05s linear',
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </>
+            <canvas
+              id="global-vision-canvas"
+              ref={canvasRef}
+              width={320}
+              height={240}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
           ) : (
             <div
               style={{
