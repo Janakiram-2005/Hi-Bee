@@ -687,7 +687,7 @@ export default function GestureConfig() {
               ...(g.fingers || defaultFingers),
               [finger]: value,
             },
-          };
+          } as Gesture;
         }
         return g;
       }),

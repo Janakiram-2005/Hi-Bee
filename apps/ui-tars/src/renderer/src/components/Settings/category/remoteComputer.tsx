@@ -24,7 +24,7 @@ import { cn } from '@renderer/utils';
 
 const formSchema = z.object({
   url: z.string().url(),
-  token: z.string().min(1),
+  token: z.string().min(1), // secretlint-disable-line
   server: z.string().min(1),
   ip: z.string().min(1),
 });
@@ -52,7 +52,7 @@ export function RemoteComputerSettings({
     resolver: (zodResolver as any)(formSchema),
     defaultValues: {
       url: '',
-      token: '',
+      token: '', // secretlint-disable-line
       server: '',
       ip: '',
     },

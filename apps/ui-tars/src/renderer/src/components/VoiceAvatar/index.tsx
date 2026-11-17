@@ -157,7 +157,7 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       }
     };
     const unsubscribe = window.electron?.ipcRenderer?.on(
-      'hibee:pipeline-status',
+      'hibee:pipeline-status' as any,
       handler,
     );
     return () => {

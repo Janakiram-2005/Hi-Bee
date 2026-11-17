@@ -5,6 +5,9 @@ import time
 import datetime
 import asyncio
 import base64
+import cv2
+import numpy as np
+from tenacity import retry, stop_after_attempt, wait_exponential
 from typing import Callable, Optional, Dict, Tuple, Union
 
 import anthropic
@@ -24,7 +27,7 @@ def clean_id_token(text: str) -> str:
     cleaned = re.sub(r'[^a-zA-Z0-9_]', '', cleaned)
     return cleaned
 
-def check_match(accumulated_str: str, active_map: dict) -> Optional[str]:
+def check_match(accumulated_str: str, active_map: dict, sorted_keys: list = None) -> Optional[str]:
     """
     Check if the current accumulated text buffer matches any known UI key in active_map.
     Supports exact matching and suffix-based matching (e.g. if buffer ends with a key).
@@ -34,14 +37,12 @@ def check_match(accumulated_str: str, active_map: dict) -> Optional[str]:
         return None
         
     # 1. Look for exact match
-    for key in active_map.keys():
-        if key == cleaned:
-            return key
+    if cleaned in active_map:
+        return cleaned
             
     # 2. Look for suffix match (e.g. "selection btn_4" or "target 14")
-    # Sort keys by length descending to match the most specific identifier first (e.g. btn_14 over 14)
-    sorted_keys = sorted(active_map.keys(), key=len, reverse=True)
-    for key in sorted_keys:
+    keys_to_check = sorted_keys if sorted_keys is not None else sorted(active_map.keys(), key=len, reverse=True)
+    for key in keys_to_check:
         if cleaned.endswith(key):
             return key
             
@@ -63,6 +64,7 @@ class VLMClient:
             print("[WARNING] VLMClient: No ANTHROPIC_API_KEY provided. API requests will fail.")
             self.client = None
 
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def generate_target_id_async(
         self,
         hwnd: int,
@@ -87,21 +89,66 @@ class VLMClient:
             "App-specific rules: Notepad and common windows standard UIA components should be preferred. Visual fallback applies when DOM is absent."
         )
 
+        # Optimize image size before base64 encoding
+        try:
+            nparr = np.frombuffer(screenshot_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is not None:
+                h, w = img.shape[:2]
+                max_dim = 1280
+                if w > max_dim or h > max_dim:
+                    scale = max_dim / max(w, h)
+                    img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                _, buffer = cv2.imencode('.png', img)
+                screenshot_bytes = buffer.tobytes()
+        except Exception as e:
+            print(f"[VLMClient] Warning: Image optimization failed, using original bytes. {e}")
+
         # Base64 encode the image
         image_b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
         
-        # Prepare layout list text
+        # Prepare layout list text with formatted accessibility node bounds and labels
         layout_elements_str = ""
         if layout["mode"] == "dom":
             layout_elements = []
             for el in layout["elements"]:
-                layout_elements.append(f"ID: {el.get('id')}, Name: {el.get('name')}, Type: {el.get('type')}, Rect: {el.get('rect')}")
+                rect = el.get("rect") or el.get("box")
+                rect_str = f"Bounds: {rect}" if rect else "Bounds: [N/A]"
+                name = el.get("name") or el.get("label") or "Unnamed"
+                el_id = el.get("id") or "N/A"
+                el_type = el.get("type") or "Control"
+                patterns = el.get("patterns") or []
+                pattern_str = f", Patterns: {patterns}" if patterns else ""
+                layout_elements.append(
+                    f"[A11y Node] ID: {el_id}, Name/Label: '{name}', Role/Type: {el_type}, {rect_str}{pattern_str}"
+                )
             layout_elements_str = "\n".join(layout_elements)
         else:
             layout_elements = []
             for el in layout["elements"]:
-                layout_elements.append(f"Tag: {el.get('index')}, Type: {el.get('type')}, Text: {el.get('text')}")
+                box = el.get("box")
+                box_str = f"Bounds: {box}" if box else "Bounds: [N/A]"
+                text = el.get("text") or el.get("name") or "N/A"
+                tag = el.get("index") or el.get("id")
+                el_type = el.get("type") or "VisualElement"
+                layout_elements.append(
+                    f"[Visual Node] Tag Index: {tag}, Type: {el_type}, Label/Text: '{text}', {box_str}"
+                )
+            
+            # If hybrid mode has additional accessibility tree metadata, append it
+            a11y_nodes = layout.get("a11y_nodes") or []
+            if a11y_nodes:
+                layout_elements.append("\nAssociated Native OS Accessibility Tree Nodes:")
+                for a_node in a11y_nodes[:20]:
+                    rect = a_node.get("rect") or a_node.get("box")
+                    rect_str = f"Bounds: {rect}" if rect else "Bounds: [N/A]"
+                    name = a_node.get("name") or "Unnamed"
+                    node_id = a_node.get("id") or "N/A"
+                    layout_elements.append(
+                        f"[A11y Metadata] ID: {node_id}, Name: '{name}', Role: {a_node.get('type', 'Control')}, {rect_str}"
+                    )
             layout_elements_str = "\n".join(layout_elements)
+
 
         user_prompt = (
             f"Active Window Mode: {layout['mode']}\n"
@@ -146,6 +193,11 @@ class VLMClient:
         accumulated_text = ""
         matched_key = None
 
+        # Pre-sort keys for faster suffix matching during the stream
+        sorted_map_keys = sorted(active_map.keys(), key=len, reverse=True)
+
+        last_drift_check_time = time.perf_counter()
+
         try:
             async with self.client.messages.stream(
                 model=self.model_name,
@@ -155,32 +207,35 @@ class VLMClient:
             ) as stream:
                 async for text in stream.text_stream:
                     # Measure Time-To-First-Token (TTFT)
+                    current_time = time.perf_counter()
                     if not ttft_recorded:
                         ttft_recorded = True
-                        ttft_duration = (time.perf_counter() - start_time) * 1000.0
+                        ttft_duration = (current_time - start_time) * 1000.0
                         if on_ttft_callback:
                             on_ttft_callback(ttft_duration)
                         print(f"[VLMClient] Time-to-First-Token (TTFT): {ttft_duration:.2f} ms")
 
-                    # Check window drift boundaries dynamically during streaming
-                    current_rect = os_dom_engine.win32_api.get_window_rect(hwnd)
-                    if current_rect:
-                        c_left, c_top, c_w, c_h = initial_rect
-                        n_left, n_top, n_w, n_h = current_rect
-                        if (abs(n_left - c_left) > 3 or 
-                            abs(n_top - c_top) > 3 or 
-                            abs(n_w - c_w) > 3 or 
-                            abs(n_h - c_h) > 3):
-                            raise RuntimeError(
-                                f"Window moved/resized during streaming (drift: "
-                                f"dx={abs(n_left - c_left)}, dy={abs(n_top - c_top)}). Aborting stream."
-                            )
+                    # Check window drift boundaries dynamically during streaming (Debounced to every 500ms)
+                    if (current_time - last_drift_check_time) > 0.5:
+                        last_drift_check_time = current_time
+                        current_rect = os_dom_engine.win32_api.get_window_rect(hwnd)
+                        if current_rect:
+                            c_left, c_top, c_w, c_h = initial_rect
+                            n_left, n_top, n_w, n_h = current_rect
+                            if (abs(n_left - c_left) > 3 or
+                                abs(n_top - c_top) > 3 or
+                                abs(n_w - c_w) > 3 or
+                                abs(n_h - c_h) > 3):
+                                raise RuntimeError(
+                                    f"Window moved/resized during streaming (drift: "
+                                    f"dx={abs(n_left - c_left)}, dy={abs(n_top - c_top)}). Aborting stream."
+                                )
 
                     # Append text fragment
                     if text:
                         accumulated_text += text
                         # Perform regex pattern validation against active dictionary keys
-                        matched_key = check_match(accumulated_text, active_map)
+                        matched_key = check_match(accumulated_text, active_map, sorted_map_keys)
                         if matched_key:
                             print(f"[VLMClient] Fragment match detected on buffer: '{accumulated_text}' -> Key: '{matched_key}'")
                             # Terminate streaming instantly, bypassing remaining text
@@ -212,13 +267,7 @@ class VLMClient:
         Synchronous wrapper execution utilizing the async client.
         Enables seamless execution within standard background threads.
         """
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(
+        return asyncio.run(
             self.generate_target_id_async(
                 hwnd, command, layout, screenshot_bytes, active_map, on_ttft_callback
             )

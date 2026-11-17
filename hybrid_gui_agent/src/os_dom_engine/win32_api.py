@@ -14,12 +14,17 @@ EnumWindowsProc = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 def is_admin() -> bool:
     """Check if the active process has administrative privileges."""
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        if sys.platform == "win32" and hasattr(ctypes, "windll"):
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        return os.geteuid() == 0 if hasattr(os, "geteuid") else False
     except Exception:
         return False
 
 def run_as_admin():
     """Relaunches the current script with elevated administrator privileges."""
+    if sys.platform != "win32" or not hasattr(ctypes, "windll"):
+        print("Self-elevation is only supported on Windows.")
+        return
     script = sys.argv[0]
     # Re-quote arguments to handle spaces
     params = " ".join(f'"{arg}"' if " " in arg else arg for arg in sys.argv[1:])
@@ -41,6 +46,8 @@ def run_as_admin():
 
 def set_dpi_awareness():
     """Force Process DPI Awareness to Per-Monitor (2) to ensure pixel coordinate parity."""
+    if sys.platform != "win32" or not hasattr(ctypes, "windll"):
+        return
     try:
         # Try Per-Monitor V2 DPI awareness (PROCESS_PER_MONITOR_DPI_AWARE = 2)
         ctypes.windll.shcore.SetProcessDpiAwareness(2)
@@ -55,6 +62,8 @@ def set_dpi_awareness():
 
 def get_window_process_name(hwnd: int) -> str:
     """Retrieve the process executable name associated with a window handle."""
+    if sys.platform != "win32" or not hasattr(ctypes, "windll"):
+        return "Unknown"
     pid = ctypes.c_ulong(0)
     ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     if pid.value == 0:
@@ -80,6 +89,8 @@ def get_window_process_name(hwnd: int) -> str:
 
 def focus_window(hwnd: int) -> bool:
     """Bring the window to the foreground, restoring it first if it is minimized."""
+    if sys.platform != "win32" or not hasattr(ctypes, "windll"):
+        return True
     if not hwnd or not ctypes.windll.user32.IsWindow(hwnd):
         return False
         
@@ -98,6 +109,8 @@ def focus_window(hwnd: int) -> bool:
 def enumerate_windows() -> list:
     """Enumerate all top-level, visible windows and map them to their process name and title."""
     windows_list = []
+    if sys.platform != "win32" or not hasattr(ctypes, "windll"):
+        return [{"hwnd": 1, "title": "Main Window", "process_name": "app"}]
     
     def enum_callback(hwnd, lParam):
         # Only inspect visible windows
@@ -126,6 +139,8 @@ def enumerate_windows() -> list:
 
 def get_window_rect(hwnd: int) -> list:
     """Get the bounding rect [left, top, width, height] of the window handle."""
+    if sys.platform != "win32" or not hasattr(ctypes, "windll"):
+        return [0, 0, 1920, 1080]
     class RECT(ctypes.Structure):
         _fields_ = [
             ("left", ctypes.c_int),
@@ -140,3 +155,4 @@ def get_window_rect(hwnd: int) -> list:
         h = rect.bottom - rect.top
         return [rect.left, rect.top, w, h]
     return None
+

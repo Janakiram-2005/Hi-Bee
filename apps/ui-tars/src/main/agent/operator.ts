@@ -21,6 +21,7 @@ import { sleep } from '@ui-tars/shared/utils';
 import { getScreenSize } from '@main/utils/screen';
 import { showClickRing } from '@main/window/ScreenMarker';
 import { parseBoxToScreenCoords } from '@ui-tars/sdk/core';
+import { getAccessibilityBridgeTS } from './accessibilityBridge';
 
 export class NutJSElectronOperator extends NutJSOperator {
   static MANUAL = {
@@ -420,35 +421,47 @@ export class NutJSElectronOperator extends NutJSOperator {
               `[Hierarchy] OS DOM click target snapped from (${startX_phys / scaleFactor}, ${startY_phys / scaleFactor}) to exact center (${cx_logical}, ${cy_logical})`,
             );
 
-            // Pre-click highlight
+            // Pre-click highlight and Synthetic OS Accessibility Overlay Bridge
             await this._preClickHighlight(cx_logical, cy_logical);
 
-            // Execute mouse click using logical coordinates
-            await mouse.setPosition(
-              new Point(Math.round(cx_logical), Math.round(cy_logical)),
+            const a11yBridge = getAccessibilityBridgeTS();
+            const synthNode = a11yBridge.registerTarget(
+              bestMatch.name || 'Target Element',
+              bestMatch.type || 'button',
+              [cx_logical, cy_logical, w / scaleFactor, h / scaleFactor],
+              action_type,
             );
-            await sleep(100);
-            if (
-              action_type === 'left_double' ||
-              action_type === 'double_click'
-            ) {
-              await mouse.doubleClick(Button.LEFT);
-            } else if (
-              action_type === 'right_click' ||
-              action_type === 'right_single'
-            ) {
-              await mouse.click(Button.RIGHT);
-            } else if (
-              action_type === 'hover' ||
-              action_type === 'mouse_move'
-            ) {
-              // Hover only, no click needed
-            } else {
-              await mouse.click(Button.LEFT);
-            }
 
-            if (action_type !== 'hover' && action_type !== 'mouse_move') {
-              await this._verifyClickEffect();
+            try {
+              // Execute mouse click using logical coordinates
+              await mouse.setPosition(
+                new Point(Math.round(cx_logical), Math.round(cy_logical)),
+              );
+              await sleep(100);
+              if (
+                action_type === 'left_double' ||
+                action_type === 'double_click'
+              ) {
+                await mouse.doubleClick(Button.LEFT);
+              } else if (
+                action_type === 'right_click' ||
+                action_type === 'right_single'
+              ) {
+                await mouse.click(Button.RIGHT);
+              } else if (
+                action_type === 'hover' ||
+                action_type === 'mouse_move'
+              ) {
+                // Hover only, no click needed
+              } else {
+                await mouse.click(Button.LEFT);
+              }
+
+              if (action_type !== 'hover' && action_type !== 'mouse_move') {
+                await this._verifyClickEffect();
+              }
+            } finally {
+              a11yBridge.unregisterTarget(synthNode.nodeId);
             }
             return { status: StatusEnum.RUNNING };
           } else {
