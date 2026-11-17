@@ -4,4 +4,5 @@
  */
 
 export * from './format';
+export * from './gestureDpr';
 export { default as sleep } from './sleep';

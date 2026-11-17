@@ -10,7 +10,7 @@ export default defineProject({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/renderer/**/*.test.ts'],
+    include: ['src/renderer/**/*.{test,spec}.{ts,tsx}'],
   },
 
   plugins: [
