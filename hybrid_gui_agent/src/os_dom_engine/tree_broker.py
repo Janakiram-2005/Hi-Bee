@@ -2,7 +2,10 @@ import json
 import subprocess
 import os
 import ctypes
-import winreg
+try:
+    import winreg
+except ImportError:
+    winreg = None
 from .win32_api import get_window_rect
 
 class TreeBroker:
@@ -16,6 +19,8 @@ class TreeBroker:
 
     def are_desktop_icons_hidden(self) -> bool:
         """Check if Windows desktop icons are hidden in the registry."""
+        if not winreg:
+            return False
         try:
             with winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER, 
