@@ -3,17 +3,15 @@ on:
     types: [opened, synchronize, reopened]
     branches:
       - '**'
-    paths-ignore:
-      - 'multimodal/**'
-      - 'hybrid_gui_agent/**'
-      - '.github/**'
+    paths:
+      - 'apps/**'
+      - 'packages/**'
   push:
     branches:
       - 'main'
-    paths-ignore:
-      - 'multimodal/**'
-      - 'hybrid_gui_agent/**'
-      - '.github/**'
+    paths:
+      - 'apps/**'
+      - 'packages/**'
 
 permissions:
   id-token: write
@@ -56,7 +54,7 @@ jobs:
           chrome-version: 120
           install-dependencies: true
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
       - name: Run typecheck
         run: npm exec turbo run typecheck
       - name: Run test
