@@ -40,8 +40,37 @@ def extract_features(timeline_data):
     Extracts robust 3D features from the MediaPipe landmarks.
     Computes all 210 pairwise distances between the 21 landmarks
     to make the model perfectly invariant to position and rotation!
+    Handles corrupted landmark events, non-finite values, and frame drops safely.
     """
-    hand_states = [item['data'] for item in timeline_data if item['type'] == 'hand' and item.get('data')]
+    if not isinstance(timeline_data, list):
+        return [0.0] * 210
+
+    hand_states = []
+    for item in timeline_data:
+        if not isinstance(item, dict) or item.get('type') != 'hand':
+            continue
+        data = item.get('data')
+        if not isinstance(data, list) or len(data) != 21:
+            continue
+        
+        valid_frame = True
+        clean_landmarks = []
+        for lm in data:
+            if not isinstance(lm, dict):
+                valid_frame = False
+                break
+            x = lm.get('x')
+            y = lm.get('y')
+            z = lm.get('z', 0.0)
+            if not (isinstance(x, (int, float)) and math.isfinite(x) and
+                    isinstance(y, (int, float)) and math.isfinite(y) and
+                    isinstance(z, (int, float)) and math.isfinite(z)):
+                valid_frame = False
+                break
+            clean_landmarks.append({'x': float(x), 'y': float(y), 'z': float(z)})
+        
+        if valid_frame and len(clean_landmarks) == 21:
+            hand_states.append(clean_landmarks)
 
     features = []
 
@@ -49,16 +78,15 @@ def extract_features(timeline_data):
         # Calculate the average position of each of the 21 landmarks over the recording
         avg_landmarks = []
         for i in range(21):
-            # Only process if the frame has 21 landmarks
-            xs = [frame[i]['x'] for frame in hand_states if isinstance(frame, list) and len(frame) == 21]
-            ys = [frame[i]['y'] for frame in hand_states if isinstance(frame, list) and len(frame) == 21]
-            zs = [frame[i]['z'] for frame in hand_states if isinstance(frame, list) and len(frame) == 21]
+            xs = [frame[i]['x'] for frame in hand_states]
+            ys = [frame[i]['y'] for frame in hand_states]
+            zs = [frame[i]['z'] for frame in hand_states]
             if xs:
                 avg_landmarks.append({'x': sum(xs)/len(xs), 'y': sum(ys)/len(ys), 'z': sum(zs)/len(zs)})
             else:
-                avg_landmarks.append({'x': 0, 'y': 0, 'z': 0})
+                avg_landmarks.append({'x': 0.0, 'y': 0.0, 'z': 0.0})
         
-        if len(avg_landmarks) == 21 and any(lm['x'] != 0 for lm in avg_landmarks):
+        if len(avg_landmarks) == 21 and any(lm['x'] != 0 or lm['y'] != 0 or lm['z'] != 0 for lm in avg_landmarks):
             # Calculate pairwise distances (21 * 20 / 2 = 210 features)
             dists = []
             for i in range(21):
@@ -70,9 +98,9 @@ def extract_features(timeline_data):
             
             # Normalize distances by the max distance to make it scale-invariant
             max_dist = max(dists) if dists else 1.0
-            if max_dist == 0: max_dist = 1.0
+            if max_dist == 0 or not math.isfinite(max_dist): max_dist = 1.0
             
-            features.extend([d / max_dist for d in dists])
+            features.extend([d / max_dist if math.isfinite(d) else 0.0 for d in dists])
         else:
             features.extend([0.0] * 210)
     else:
@@ -81,38 +109,43 @@ def extract_features(timeline_data):
     return features
 
 # Configuration
-DATASET_DIR = os.path.join(os.path.dirname(__file__), "words")
+DATASET_DIRS = [
+    os.path.join(os.path.dirname(__file__), "gestures"),
+    os.path.join(os.path.dirname(__file__), "words")
+]
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "custom_word_model.pkl")
 JSON_MODEL_PATH = os.path.join(os.path.dirname(__file__), "custom_word_model.json")
 
 def main():
-    gestures_dir = DATASET_DIR
-    
-    if not os.path.exists(gestures_dir):
-        print(f"Dataset directory not found: {gestures_dir}")
-        print("Please record some gestures using the Dataset Studio first.")
-        return
-
     X = []
     y = []
+    seen_files = set()
 
-    # Iterate over all gesture labels (folder names)
-    for label in os.listdir(gestures_dir):
-        label_dir = os.path.join(gestures_dir, label)
-        if not os.path.isdir(label_dir):
+    for gestures_dir in DATASET_DIRS:
+        if not os.path.exists(gestures_dir):
             continue
-        
-        # Find all JSON data files
-        json_files = glob.glob(os.path.join(label_dir, 'data_*.json'))
-        for jf in json_files:
-            try:
-                with open(jf, 'r') as f:
-                    timeline = json.load(f)
-                    features = extract_features(timeline)
-                    X.append(features)
-                    y.append(label)
-            except Exception as e:
-                print(f"Error reading {jf}: {e}")
+
+        # Iterate over all gesture labels (folder names)
+        for label in os.listdir(gestures_dir):
+            label_dir = os.path.join(gestures_dir, label)
+            if not os.path.isdir(label_dir):
+                continue
+            
+            # Find all JSON data files
+            json_files = glob.glob(os.path.join(label_dir, 'data_*.json'))
+            for jf in json_files:
+                abs_path = os.path.abspath(jf)
+                if abs_path in seen_files:
+                    continue
+                seen_files.add(abs_path)
+                try:
+                    with open(jf, 'r') as f:
+                        timeline = json.load(f)
+                        features = extract_features(timeline)
+                        X.append(features)
+                        y.append(label)
+                except Exception as e:
+                    print(f"Error reading {jf}: {e}")
 
     if len(X) == 0:
         print("No training data found. Please record gestures in the Dataset Studio.")

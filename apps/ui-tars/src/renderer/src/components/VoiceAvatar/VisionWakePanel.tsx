@@ -39,6 +39,10 @@ export function VisionWakePanel({
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
   const testGesturesRef = useRef<any[] | null>(null);
+  const gestureStateMachineRef = useRef(
+    new GestureHoldStateMachine(1000, 1500),
+  );
+  const holdProgressRef = useRef<GestureHoldProgress | null>(null);
 
   const isTranslatingRef = useRef(false);
   const translationBufferRef = useRef<string[]>([]);
@@ -506,7 +510,7 @@ export function VisionWakePanel({
               );
 
               // Legacy trigger
-              if (isBlink || isNodDown) {
+              if (faceState.blink || faceState.nodDown) {
                 shouldWake = true;
               }
 
