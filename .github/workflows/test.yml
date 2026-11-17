@@ -3,13 +3,15 @@ on:
     types: [opened, synchronize, reopened]
     branches:
       - '**'
-    paths-ignore:
-      - 'multimodal/**'
+    paths:
+      - 'apps/**'
+      - 'packages/**'
   push:
     branches:
       - 'main'
-    paths-ignore:
-      - 'multimodal/**'
+    paths:
+      - 'apps/**'
+      - 'packages/**'
 
 permissions:
   id-token: write
@@ -52,7 +54,7 @@ jobs:
         with:
           chrome-version: 120
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
       - name: Run typecheck
         run: npm exec turbo run typecheck
       - name: Run test

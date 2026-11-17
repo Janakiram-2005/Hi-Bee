@@ -252,14 +252,30 @@ export const visionRoute = {
   trainCustomModel: t.procedure.handle(async () => {
     const { exec } = require('child_process');
     const path = require('path');
+    const fs = require('fs');
     return new Promise((resolve) => {
-      const scriptPath = path.join(
-        process.cwd(),
-        'apps',
-        'ui-tars',
-        'dataset',
-        'train_model.py',
-      );
+      const possibleScripts = [
+        path.join(
+          process.cwd(),
+          'apps',
+          'ui-tars',
+          'dataset',
+          'train_word_model.py',
+        ),
+        path.join(process.cwd(), 'dataset', 'train_word_model.py'),
+        path.join(
+          process.cwd(),
+          'apps',
+          'ui-tars',
+          'dataset',
+          'train_model.py',
+        ),
+        path.join(process.cwd(), 'dataset', 'train_model.py'),
+      ];
+      const scriptPath =
+        possibleScripts.find((p: string) => fs.existsSync(p)) ||
+        possibleScripts[0];
+      logger.info(`[Vision] Executing model training script: ${scriptPath}`);
       // Execute the python script
       exec(
         `python "${scriptPath}"`,
@@ -299,7 +315,7 @@ Only return the final sentence, no other text.`;
 
         // 2. Voice Generation
         const { SettingStore } = await import('@main/store/setting');
-        const settings = SettingStore.getStore();
+        const settings = SettingStore.getStore() as any;
         const languageCode = settings?.voiceLanguage || 'en-US';
         const voiceId =
           settings?.voiceAccentUri || settings?.voiceAccent || undefined;
