@@ -14,14 +14,14 @@
     },
     "ui-tars-desktop#build": {
       "outputs": [
-        "apps/ui-tars-desktop/dist/**",
-        "apps/ui-tars-desktop/out/**"
+        "apps/ui-tars/dist/**",
+        "apps/ui-tars/out/**"
       ]
     },
     "ui-tars-desktop#build:e2e": {
       "outputs": [
-        "apps/ui-tars-desktop/out/**",
-        "apps/ui-tars-desktop/dist/**"
+        "apps/ui-tars/out/**",
+        "apps/ui-tars/dist/**"
       ]
     },
     "ui-tars-desktop#test:e2e": {

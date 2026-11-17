@@ -13,7 +13,15 @@ import {
   mouse,
   straightTo,
 } from '@computer-use/nut-js';
-import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  beforeAll,
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 
 import { NutJSOperator } from '../src/index';
 
@@ -33,6 +41,8 @@ vi.mock('@ui-tars/sdk/core', async (importOriginal) => {
   };
 });
 
+let currentMousePos = { x: 0, y: 0 };
+
 // Mock @computer-use/nut-js
 vi.mock('@computer-use/nut-js', async (importOriginal) => {
   const actual: any = await importOriginal();
@@ -40,6 +50,13 @@ vi.mock('@computer-use/nut-js', async (importOriginal) => {
     mouse: {
       move: vi.fn(),
       click: vi.fn(),
+      setPosition: vi.fn().mockImplementation((point: any) => {
+        currentMousePos = { x: point.x, y: point.y };
+        return Promise.resolve();
+      }),
+      getPosition: vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(currentMousePos)),
       config: {
         mouseSpeed: 1500,
       },
