@@ -21,7 +21,7 @@ export default defineProject({
   plugins: [
     // @ts-ignore
     tsconfigPath({
-      projects: ['./tsconfig.node.json'],
+      projects: [resolve(__dirname, 'tsconfig.node.json')],
     }),
   ],
 });
