@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Eye,
   EyeOff,
@@ -15,14 +15,23 @@ import {
   DrawingUtils,
 } from '@mediapipe/tasks-vision';
 import {
+  MultiHandHoldTracker,
+  HandLandmarkerResults,
+} from './multiHandHoldTracker';
+import {
+  getCanvasDprMetrics,
+  calculateDprPreviewCoordinates,
+  checkGestureBounds,
+  computeDprFingerStates,
+  DprGestureStateSmoother,
+} from '../../utils/gestureDpr';
+import {
   resolveVisionWasmFileset,
   createHandLandmarkerWithFallback,
   createFaceLandmarkerWithFallback,
 } from '../../utils/visionLoader';
 import {
   GestureStateMachine,
-  computeFingerStates,
-  isOpenPalm,
   findMatchingGesture,
   GestureConfig,
 } from '../../utils/gestureEngine';
@@ -31,9 +40,13 @@ import './VoiceAvatar.css';
 export function VisionWakePanel({
   autoStart = false,
   testGestures = null,
+  holdThresholdMs = 1000,
+  cooldownMs = 2000,
 }: {
   autoStart?: boolean;
   testGestures?: any[] | null;
+  holdThresholdMs?: number;
+  cooldownMs?: number;
 }) {
   const [isVisionEnabled, setIsVisionEnabled] = useState(autoStart);
   const [isPreviewEnabled, setIsPreviewEnabled] = useState(autoStart);
@@ -49,6 +62,7 @@ export function VisionWakePanel({
   const [initRetryKey, setInitRetryKey] = useState<number>(0);
 
   const [isTranslating, setIsTranslating] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0);
   const [activeHoldProgress, setActiveHoldProgress] = useState<number>(0);
   const [activeCandidate, setActiveCandidate] = useState<GestureConfig | null>(
     null,
@@ -59,15 +73,11 @@ export function VisionWakePanel({
 
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
-  const animationRef = useRef<number | null>(null);
+  const animationRef = useRef<number | undefined>(undefined);
   const lastVideoTimeRef = useRef<number>(-1);
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
   const testGesturesRef = useRef<any[] | null>(null);
-  const gestureStateMachineRef = useRef(
-    new GestureHoldStateMachine(1000, 1500),
-  );
-  const holdProgressRef = useRef<GestureHoldProgress | null>(null);
 
   const gestureStateMachineRef = useRef<GestureStateMachine>(
     new GestureStateMachine({
@@ -84,16 +94,56 @@ export function VisionWakePanel({
   });
   const openPalmHoldStartRef = useRef<number>(0);
 
+  const handleToggleMode = useCallback((handKey?: string) => {
+    const newTranslatingState = !isTranslatingRef.current;
+    isTranslatingRef.current = newTranslatingState;
+    setIsTranslating(newTranslatingState);
+    console.log(
+      `[VisionWake] Mode toggled: isTranslating=${newTranslatingState} by hand ${handKey}`,
+    );
+
+    if (!newTranslatingState && translationBufferRef.current.length > 0) {
+      window.electron?.ipcRenderer
+        ?.invoke('visionRoute.processGestureSentence', {
+          keywords: translationBufferRef.current,
+        })
+        .catch(console.error);
+      translationBufferRef.current = [];
+    }
+
+    if (canvasRef.current) {
+      canvasRef.current.style.boxShadow = newTranslatingState
+        ? '0 0 20px #a855f7'
+        : '0 0 20px #ef4444';
+      setTimeout(() => {
+        if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+      }, 1000);
+    }
+  }, []);
+
+  const trackerRef = useRef<MultiHandHoldTracker>(
+    new MultiHandHoldTracker({
+      holdDurationMs: holdThresholdMs,
+      cooldownMs: cooldownMs,
+      fingerExtensionRatio: 1.0,
+      frameDropGraceMs: 150,
+      onTrigger: (handKey) => {
+        handleToggleMode(handKey);
+      },
+    }),
+  );
+
+  const smootherRef = useRef<DprGestureStateSmoother>(
+    new DprGestureStateSmoother(2, 3),
+  );
+
   useEffect(() => {
     testGesturesRef.current = testGestures;
   }, [testGestures]);
 
-  // Initialize MediaPipe Models with Offline Fallback and Delegate Resilience
+  // Initialize MediaPipe Models with offline-first loading and GPU->CPU delegate fallback
   useEffect(() => {
     let active = true;
-    setErrorState(null);
-    setEngineReady(false);
-
     const initModels = async () => {
       try {
         console.info(
@@ -106,10 +156,17 @@ export function VisionWakePanel({
         if (!active) return;
         setEngineSource(source);
 
-        // HandLandmarker with GPU -> CPU delegate fallback
         const { landmarker: handLandmarker, delegate: handDelegate } =
-          await createHandLandmarkerWithFallback(fileset, {}, (msg) =>
-            console.info('[VisionWakePanel]', msg),
+          await createHandLandmarkerWithFallback(
+            fileset,
+            {
+              runningMode: 'VIDEO',
+              numHands: 2,
+              minHandDetectionConfidence: 0.5,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            },
+            (msg) => console.info('[VisionWakePanel]', msg),
           );
 
         if (!active) {
@@ -117,10 +174,19 @@ export function VisionWakePanel({
           return;
         }
 
-        // FaceLandmarker with GPU -> CPU delegate fallback
         const { landmarker: faceLandmarker } =
-          await createFaceLandmarkerWithFallback(fileset, {}, (msg) =>
-            console.info('[VisionWakePanel]', msg),
+          await createFaceLandmarkerWithFallback(
+            fileset,
+            {
+              runningMode: 'VIDEO',
+              numFaces: 1,
+              outputFaceBlendshapes: true,
+              outputFacialTransformationMatrixes: true,
+              minFaceDetectionConfidence: 0.5,
+              minFacePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            },
+            (msg) => console.info('[VisionWakePanel]', msg),
           );
 
         if (!active) {
@@ -143,7 +209,11 @@ export function VisionWakePanel({
           '[VisionWakePanel] Failed to load MediaPipe models:',
           error,
         );
-        setErrorState(`AI Model Error: ${error?.message || error}`);
+        setErrorState(
+          'AI Model Error: ' +
+            (error?.message ||
+              'Unable to load vision models in offline environment'),
+        );
         setEngineReady(false);
       }
     };
@@ -227,6 +297,20 @@ export function VisionWakePanel({
           ) {
             lastVideoTimeRef.current = video.currentTime;
 
+            // Calculate display and DPR metrics
+            const dpr =
+              typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+            const dprMetrics = getCanvasDprMetrics(320, 240, dpr);
+
+            // Synchronize canvas buffer resolution with DPR scaling
+            if (
+              canvas.width !== dprMetrics.bufferWidth ||
+              canvas.height !== dprMetrics.bufferHeight
+            ) {
+              canvas.width = dprMetrics.bufferWidth;
+              canvas.height = dprMetrics.bufferHeight;
+            }
+
             // Detect
             const handResults = handLandmarkerRef.current.detectForVideo(
               video,
@@ -266,7 +350,36 @@ export function VisionWakePanel({
             let frameCandidate: GestureConfig | null = null;
 
             // Process Hands
-            if (handResults.landmarks && handResults.landmarks.length > 0) {
+            if (handResults.landmarks) {
+              const holdResult = trackerRef.current.processFrame(
+                handResults as HandLandmarkerResults,
+                Date.now(),
+              );
+              setHoldProgress(
+                holdResult.isHolding ? holdResult.activeHoldProgress : 0,
+              );
+
+              // Dispatch global hold progress event for UI layers
+              window.dispatchEvent(
+                new CustomEvent('vision:hold-progress', {
+                  detail: {
+                    isHolding: holdResult.isHolding,
+                    progress: holdResult.activeHoldProgress,
+                    activeHandKey: holdResult.activeHandKey,
+                    inCooldown: holdResult.inCooldown,
+                  },
+                }),
+              );
+
+              // Dispatch primary finger state for gestures page
+              if (holdResult.primaryFingerState) {
+                window.dispatchEvent(
+                  new CustomEvent('vision:raw-hand-state', {
+                    detail: holdResult.primaryFingerState,
+                  }),
+                );
+              }
+
               for (const landmarks of handResults.landmarks) {
                 // Calculate preview coordinates and check bounds
                 const previewCoordinates = calculateDprPreviewCoordinates(
@@ -281,11 +394,12 @@ export function VisionWakePanel({
                   HandLandmarker.HAND_CONNECTIONS,
                   {
                     color: '#00FF00',
-                    lineWidth: 2,
+                    lineWidth: Math.max(2, Math.round(2 * dprMetrics.dpr)),
                   },
                 );
 
-                // Draw fingertips
+                // Draw fingertips scaled for DPR
+                const radius = Math.max(4, Math.round(4 * dprMetrics.dpr));
                 for (let i = 0; i < landmarks.length; i++) {
                   const x = previewCoordinates[i].canvas.x;
                   const y = previewCoordinates[i].canvas.y;
@@ -302,80 +416,114 @@ export function VisionWakePanel({
                   ctx.stroke();
                 }
 
-                // Compute Finger States using robust Euclidean distance helper
-                const currentState = computeFingerStates(landmarks);
-                if (!currentState) continue;
+                // Compute Finger States with aspect-corrected distance
+                const rawFingerState = computeDprFingerStates(
+                  landmarks,
+                  dprMetrics.aspectRatio,
+                );
+                const smoothed = smootherRef.current.update(
+                  rawFingerState,
+                  boundsResult.inBounds,
+                );
+                const currentState = smoothed.state || rawFingerState;
 
-                // Emit raw state so Gestures page can capture it
+                // Propagate corrected metrics across vision engine boundary
                 window.dispatchEvent(
                   new CustomEvent('vision:raw-hand-state', {
-                    detail: currentState,
+                    detail: {
+                      ...currentState,
+                      fingers: currentState,
+                      landmarks,
+                      previewCoordinates,
+                      inBounds: boundsResult.inBounds,
+                      dprMetrics,
+                      data: landmarks,
+                    },
                   }),
                 );
 
-                // Check for "Open Palm" (all 5 fingers open) to toggle translation mode
-                const isPalm = isOpenPalm(currentState);
+                // Only evaluate interactive triggers if hand is within visible preview bounds
+                if (boundsResult.inBounds) {
+                  // Check for "Open Palm" (all 5 fingers open) to toggle translation mode
+                  const isOpenPalm =
+                    currentState.thumb === 'open' &&
+                    currentState.index === 'open' &&
+                    currentState.middle === 'open' &&
+                    currentState.ring === 'open' &&
+                    currentState.pinky === 'open';
 
-                if (isPalm) {
-                  if (openPalmHoldStartRef.current === 0) {
-                    openPalmHoldStartRef.current = Date.now();
-                  } else if (Date.now() - openPalmHoldStartRef.current > 1000) {
-                    // Toggled!
-                    const newTranslatingState = !isTranslatingRef.current;
-                    isTranslatingRef.current = newTranslatingState;
-                    setIsTranslating(newTranslatingState);
-                    openPalmHoldStartRef.current = 0; // reset
-
-                    if (
-                      !newTranslatingState &&
-                      translationBufferRef.current.length > 0
+                  if (isOpenPalm) {
+                    if (openPalmHoldStartRef.current === 0) {
+                      openPalmHoldStartRef.current = Date.now();
+                    } else if (
+                      Date.now() - openPalmHoldStartRef.current >
+                      1000
                     ) {
-                      // Stopped translating -> Send buffer to backend
-                      window.electron?.ipcRenderer
-                        ?.invoke('visionRoute.processGestureSentence', {
-                          keywords: translationBufferRef.current,
-                        })
-                        .catch(console.error);
-                      translationBufferRef.current = []; // clear buffer
-                    }
+                      // Toggled!
+                      const newTranslatingState = !isTranslatingRef.current;
+                      isTranslatingRef.current = newTranslatingState;
+                      setIsTranslating(newTranslatingState);
+                      openPalmHoldStartRef.current = 0; // reset
 
-                    // Flash screen to indicate mode change
-                    if (canvasRef.current) {
-                      canvasRef.current.style.boxShadow = newTranslatingState
-                        ? '0 0 20px #a855f7'
-                        : '0 0 20px #ef4444';
-                      setTimeout(() => {
-                        if (canvasRef.current)
-                          canvasRef.current.style.boxShadow = 'none';
-                      }, 1000);
-                    }
+                      if (
+                        !newTranslatingState &&
+                        translationBufferRef.current.length > 0
+                      ) {
+                        // Stopped translating -> Send buffer to backend
+                        window.electron?.ipcRenderer
+                          ?.invoke('visionRoute.processGestureSentence', {
+                            keywords: translationBufferRef.current,
+                          })
+                          .catch(console.error);
+                        translationBufferRef.current = []; // clear buffer
+                      }
 
-                    // Add cooldown so it doesn't instantly toggle back
-                    openPalmHoldStartRef.current = Date.now() + 2000;
+                      // Flash screen to indicate mode change
+                      if (canvasRef.current) {
+                        canvasRef.current.style.boxShadow = newTranslatingState
+                          ? '0 0 20px #a855f7'
+                          : '0 0 20px #ef4444';
+                        setTimeout(() => {
+                          if (canvasRef.current)
+                            canvasRef.current.style.boxShadow = 'none';
+                        }, 1000);
+                      }
+
+                      // Add cooldown so it doesn't instantly toggle back
+                      openPalmHoldStartRef.current = Date.now() + 2000;
+                    }
+                  } else {
+                    if (Date.now() > openPalmHoldStartRef.current) {
+                      openPalmHoldStartRef.current = 0;
+                    }
                   }
 
-                // Match against configured gestures
-                const gesturesToUse =
-                  testGesturesRef.current || configuredGesturesRef.current;
-                if (gesturesToUse && gesturesToUse.length > 0) {
-                  frameCandidate = findMatchingGesture(
-                    currentState,
-                    gesturesToUse,
-                  );
-                }
+                  // Match against configured gestures
+                  const gesturesToUse =
+                    testGesturesRef.current || configuredGesturesRef.current;
+                  if (gesturesToUse && gesturesToUse.length > 0) {
+                    frameCandidate = findMatchingGesture(
+                      currentState,
+                      gesturesToUse,
+                    );
+                  }
 
-                // Fallback L-shape wake (if no config matched but matches L-shape roughly)
-                const thumbTip = landmarks[4];
-                const indexTip = landmarks[8];
-                const middleTip = landmarks[12];
-                if (
-                  !frameCandidate &&
-                  indexTip.y < middleTip.y - 0.1 &&
-                  Math.abs(thumbTip.y - indexTip.y) > 0.1
-                ) {
-                  shouldWake = true;
+                  // Fallback L-shape wake (if no config matched but matches L-shape roughly)
+                  const thumbTip = landmarks[4];
+                  const indexTip = landmarks[8];
+                  const middleTip = landmarks[12];
+                  if (
+                    !frameCandidate &&
+                    indexTip.y < middleTip.y - 0.1 &&
+                    Math.abs(thumbTip.y - indexTip.y) > 0.1
+                  ) {
+                    shouldWake = true;
+                  }
                 }
               }
+            } else {
+              // Smooth frame drop when no hands detected
+              smootherRef.current.update(null, false);
             }
 
             // Update Gesture State Machine for threshold validation, hold progress, and spurious suppression
@@ -406,7 +554,10 @@ export function VisionWakePanel({
                   Date.now() - lastAddedGestureRef.current.time > 1500)
               ) {
                 translationBufferRef.current.push(label);
-                lastAddedGestureRef.current = { name: label, time: Date.now() };
+                lastAddedGestureRef.current = {
+                  name: label,
+                  time: Date.now(),
+                };
 
                 // Brief flash to indicate word recorded
                 if (canvasRef.current) {
@@ -417,9 +568,6 @@ export function VisionWakePanel({
                   }, 300);
                 }
               }
-            } else {
-              // Smooth frame drop when no hands detected
-              smootherRef.current.update(null, false);
             }
 
             // Process Face
@@ -444,7 +592,7 @@ export function VisionWakePanel({
                   ?.score || 0;
 
               const isBlink = blinkLeft > 0.6 && blinkRight > 0.6;
-              const isLookLeft = eyeLookOutLeft > 0.5;
+              const isLookLeft = eyeLookOutLeft > 0.5; // very rough heuristic
               const isLookRight = eyeLookInLeft > 0.5;
 
               let isNodUp = false;
@@ -506,53 +654,62 @@ export function VisionWakePanel({
                   Math.round(1.5 * dprMetrics.dpr),
                 );
                 for (const landmarks of faceResults.faceLandmarks) {
-                  ctx.fillStyle = '#00FFFF';
                   for (let i = 0; i < landmarks.length; i += 10) {
-                    const x = landmarks[i].x * canvas.width;
-                    const y = landmarks[i].y * canvas.height;
+                    const pt = landmarks[i];
                     ctx.beginPath();
-                    ctx.arc(x, y, facePointRadius, 0, 2 * Math.PI);
+                    ctx.arc(
+                      (1 - pt.x) * canvas.width,
+                      pt.y * canvas.height,
+                      facePointRadius,
+                      0,
+                      2 * Math.PI,
+                    );
+                    ctx.fillStyle = '#00FFCC';
                     ctx.fill();
                   }
                 }
               }
             }
 
-            ctx.restore();
+            // Handle Wake / Action Triggering
+            if (shouldWake || detectedGesture) {
+              const now = Date.now();
+              if (now - lastWakeTimeRef.current > 2000) {
+                lastWakeTimeRef.current = now;
 
-            if (
-              (shouldWake || detectedGesture) &&
-              Date.now() - lastWakeTimeRef.current > 3000
-            ) {
-              lastWakeTimeRef.current = Date.now();
+                if (detectedGesture) {
+                  console.log(
+                    '[VisionWake] Detected Configured Gesture:',
+                    detectedGesture.name,
+                  );
 
-              if (detectedGesture) {
-                window.dispatchEvent(
-                  new CustomEvent('vision:gesture-triggered', {
-                    detail: detectedGesture,
-                  }),
-                );
-              } else {
-                window.dispatchEvent(new CustomEvent('vision:wake-triggered'));
-              }
-
-              if (canvasRef.current) {
-                canvasRef.current.style.boxShadow = '0 0 20px #4ade80';
-                setTimeout(() => {
-                  if (canvasRef.current)
-                    canvasRef.current.style.boxShadow = 'none';
-                }, 1000);
+                  // Dispatch to backend via IPC
+                  window.electron?.ipcRenderer
+                    ?.invoke('gesture:trigger', {
+                      gestureId: detectedGesture.id,
+                      action: detectedGesture.action,
+                      actionArg: detectedGesture.actionArg,
+                    })
+                    .catch(console.error);
+                } else {
+                  console.log(
+                    '[VisionWake] Hand/Face Wake triggered! Dispatching hibee:voice-wake event',
+                  );
+                  window.dispatchEvent(new CustomEvent('hibee:voice-wake'));
+                }
               }
             }
+
+            ctx.restore();
           }
 
           animationRef.current = requestAnimationFrame(renderLoop);
         };
 
-        renderLoop();
-      } catch (err: any) {
-        console.error('Camera access failed', err);
-        setErrorState('Camera Error: ' + err.message);
+        animationRef.current = requestAnimationFrame(renderLoop);
+      } catch (err) {
+        console.error('Camera access failed:', err);
+        setErrorState('Camera Access Denied');
       }
     };
 
@@ -665,15 +822,21 @@ export function VisionWakePanel({
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '6px 10px',
-            background: 'rgba(30, 41, 59, 0.7)',
             borderRadius: '6px',
+            background: 'rgba(30, 41, 59, 0.7)',
             fontSize: '11px',
             color: '#94a3b8',
           }}
         >
-          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <CheckCircle size={13} style={{ color: '#4ade80' }} />
-            <span>AI Vision Engine Ready</span>
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: '#4ade80',
+            }}
+          >
+            <CheckCircle size={12} /> Ready
           </span>
           <span
             style={{
@@ -734,6 +897,51 @@ export function VisionWakePanel({
             }}
           ></span>
           Gesture Translation Active...
+        </div>
+      )}
+
+      {holdProgress > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            padding: '8px',
+            background: 'rgba(59, 130, 246, 0.2)',
+            color: '#93c5fd',
+            borderRadius: '6px',
+            fontSize: '12px',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Hold to toggle mode...</span>
+            <span>{Math.round(holdProgress * 100)}%</span>
+          </div>
+          <div
+            style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round(holdProgress * 100)}%`,
+                height: '100%',
+                background: '#60a5fa',
+                transition: 'width 0.1s linear',
+              }}
+            ></div>
+          </div>
         </div>
       )}
 
@@ -804,8 +1012,18 @@ export function VisionWakePanel({
               <canvas
                 id="global-vision-canvas"
                 ref={canvasRef}
-                width={320}
-                height={240}
+                width={
+                  320 *
+                  (typeof window !== 'undefined'
+                    ? window.devicePixelRatio || 1
+                    : 1)
+                }
+                height={
+                  240 *
+                  (typeof window !== 'undefined'
+                    ? window.devicePixelRatio || 1
+                    : 1)
+                }
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
 
