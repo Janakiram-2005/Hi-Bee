@@ -1,8 +1,5 @@
 import { initIpc } from '@ui-tars/electron-ipc/main';
 import { logger } from '../logger';
-import { vertexChat } from '@main/services/vertexAIService';
-import { TTSFactory } from '@main/services/tts/TTSFactory';
-import { windowManager } from '@main/services/windowManager';
 
 const t = initIpc.create();
 
@@ -271,6 +268,9 @@ export const visionRoute = {
           'train_model.py',
         ),
         path.join(process.cwd(), 'dataset', 'train_model.py'),
+        path.resolve(__dirname, '../../dataset/train_word_model.py'),
+        path.resolve(__dirname, '../../../dataset/train_word_model.py'),
+        path.resolve(__dirname, '../../../../dataset/train_word_model.py'),
       ];
       const scriptPath =
         possibleScripts.find((p: string) => fs.existsSync(p)) ||
@@ -309,6 +309,7 @@ export const visionRoute = {
 Keywords: [${keywords.join(', ')}]
 Only return the final sentence, no other text.`;
 
+        const { vertexChat } = await import('@main/services/vertexAIService');
         const result = await vertexChat(prompt, [], 'en-US');
         const refinedSentence = result.text.trim();
         logger.info(`[visionRoute] AI refined sentence: ${refinedSentence}`);
@@ -320,12 +321,14 @@ Only return the final sentence, no other text.`;
         const voiceId =
           settings?.voiceAccentUri || settings?.voiceAccent || undefined;
 
+        const { TTSFactory } = await import('@main/services/tts/TTSFactory');
         const ttsResult = await TTSFactory.synthesizeSpeech({
           text: refinedSentence,
           languageCode,
           voiceId,
         });
 
+        const { windowManager } = await import('@main/services/windowManager');
         // 3. Play audio immediately
         if (ttsResult.audioContent) {
           windowManager.broadcast('voice:play-audio', {

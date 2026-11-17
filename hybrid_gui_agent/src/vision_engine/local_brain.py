@@ -20,6 +20,11 @@ if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
 try:
+    from vision_engine.gesture_gatekeeper import GestureGatekeeper, EngagementState
+except ImportError:
+    from gesture_gatekeeper import GestureGatekeeper, EngagementState
+
+try:
     from vision_engine.gesture_engine import (
         get_finger_states,
         detect_hand_gestures,
@@ -56,6 +61,7 @@ def _get_coord(pt, attr, default=0.0):
     if isinstance(pt, dict):
         return float(pt.get(attr, default))
     return float(getattr(pt, attr, default))
+
 
 
 def calculate_landmark_distance(p1, p2, aspect_ratio=1.0, include_z=False):
@@ -357,12 +363,14 @@ class LocalVisionBrain:
         target_min=0.42,
         target_max=0.58,
         low_light_threshold=40.0,
+        gatekeeper=None,
     ):
         self.gesture_file_path = gesture_file_path
         self.hold_time_required = hold_time_required
         self.target_min = target_min
         self.target_max = target_max
         self.low_light_threshold = low_light_threshold
+        self.gatekeeper = gatekeeper
 
         self.gaze_start_time = None
         self.gesture_states = {}
@@ -427,6 +435,7 @@ class LocalVisionBrain:
 
         triggered_events = []
         current_gestures = []
+        relative_position = None
 
         # Process face landmarks
         if face_landmarks_list and len(face_landmarks_list) > 0:
@@ -495,18 +504,6 @@ class LocalVisionBrain:
             for mg in face_matched:
                 current_gestures.append(mg)
 
-            # Gaze holding logic
-            if self.target_min <= relative_position <= self.target_max:
-                if self.gaze_start_time is None:
-                    self.gaze_start_time = now
-                elif now - self.gaze_start_time >= self.hold_time_required:
-                    triggered_events.append({"type": "vision-wake"})
-                    self.gaze_start_time = None
-            else:
-                self.gaze_start_time = None
-        else:
-            self.gaze_start_time = None
-
         # Process hand landmarks
         if hand_landmarks_list:
             for hand_landmarks in hand_landmarks_list:
@@ -531,25 +528,60 @@ class LocalVisionBrain:
                     "in_bounds": bounds["in_bounds"]
                 })
 
-        # Process gesture hold actions with cooldown
-        active_actions = {g['action']: g for g in current_gestures}
-        for action, g in active_actions.items():
-            if action not in self.gesture_states:
-                self.gesture_states[action] = now
-            elif now - self.gesture_states[action] >= self.hold_time_required:
-                triggered_events.append({
-                    "type": "vision-gesture",
-                    "gesture": g['name'],
-                    "action": action,
-                    "actionArg": g.get('actionArg')
-                })
-                # 1.5 second cooldown to avoid spamming
-                self.gesture_states[action] = now + 1.5
+        if self.gatekeeper:
+            prev_state = self.gatekeeper.state
+            current_gaze = relative_position if payload["face_found"] else None
+            gate_result = self.gatekeeper.process_frame(
+                gaze_position=current_gaze,
+                matched_gestures=current_gestures,
+                face_present=payload["face_found"],
+                now=now,
+            )
 
-        inactive_actions = [a for a in list(self.gesture_states.keys()) if a not in active_actions]
-        for a in inactive_actions:
-            if self.gesture_states[a] < now:
-                del self.gesture_states[a]
+            # Trigger wake event on engagement transition to ENGAGED
+            if prev_state != EngagementState.ENGAGED and self.gatekeeper.state == EngagementState.ENGAGED:
+                triggered_events.append({"type": "vision-wake"})
+
+            # Emit deliberate gesture trigger only when engagement gate is open
+            if gate_result["triggered_action"]:
+                triggered_events.append(gate_result["triggered_action"])
+
+            # Include consistent gatekeeper state and visual indicators in payload
+            payload["engagement_state"] = gate_result["state"]
+            payload["gated"] = gate_result["gated"]
+            payload["engagement_progress"] = gate_result["engagement_progress"]
+            payload["hold_progress"] = gate_result["hold_progress"]
+            payload["active_gesture"] = gate_result["active_gesture"]
+        else:
+            # Legacy ungated fallback for gaze holding logic
+            if relative_position is not None and self.target_min <= relative_position <= self.target_max:
+                if self.gaze_start_time is None:
+                    self.gaze_start_time = now
+                elif now - self.gaze_start_time >= self.hold_time_required:
+                    triggered_events.append({"type": "vision-wake"})
+                    self.gaze_start_time = None
+            else:
+                self.gaze_start_time = None
+
+            # Process gesture hold actions with cooldown
+            active_actions = {g['action']: g for g in current_gestures}
+            for action, g in active_actions.items():
+                if action not in self.gesture_states:
+                    self.gesture_states[action] = now
+                elif now - self.gesture_states[action] >= self.hold_time_required:
+                    triggered_events.append({
+                        "type": "vision-gesture",
+                        "gesture": g['name'],
+                        "action": action,
+                        "actionArg": g.get('actionArg')
+                    })
+                    # 1.5 second cooldown to avoid spamming
+                    self.gesture_states[action] = now + 1.5
+
+            inactive_actions = [a for a in list(self.gesture_states.keys()) if a not in active_actions]
+            for a in inactive_actions:
+                if self.gesture_states[a] < now:
+                    del self.gesture_states[a]
 
         # Throttled base64 frame serialization
         if frame is not None:
@@ -654,11 +686,29 @@ def process_vision():
     stream_fps = float(os.environ.get("VISION_STREAM_FPS", 10.0))
     stream_frames = os.environ.get("VISION_STREAM_FRAMES", "1") != "0"
 
+    HOLD_TIME_REQUIRED = 1.2
+    TARGET_MIN = 0.42
+    TARGET_MAX = 0.58
+    LOW_LIGHT_THRESHOLD = 40.0
+
+    gatekeeper = GestureGatekeeper(
+        target_min=TARGET_MIN,
+        target_max=TARGET_MAX,
+        engagement_hold_time_s=1.0,
+        gesture_hold_time_s=HOLD_TIME_REQUIRED,
+        inactivity_timeout_s=3.0,
+        cooldown_s=1.5,
+    )
+
     brain = LocalVisionBrain(
         gesture_file_path=gesture_file_path,
-        hold_time_required=1.2,
+        hold_time_required=HOLD_TIME_REQUIRED,
         target_fps=stream_fps,
         stream_frames=stream_frames,
+        target_min=TARGET_MIN,
+        target_max=TARGET_MAX,
+        low_light_threshold=LOW_LIGHT_THRESHOLD,
+        gatekeeper=gatekeeper,
     )
 
     try:
