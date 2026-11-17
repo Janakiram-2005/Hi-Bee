@@ -10,8 +10,8 @@ import {
   MultiHandHoldTracker,
   HandLandmarkerResults,
 } from './multiHandHoldTracker';
-  import {
-getCanvasDprMetrics,
+import {
+  getCanvasDprMetrics,
   calculateDprPreviewCoordinates,
   checkGestureBounds,
   computeDprFingerStates,
@@ -48,10 +48,6 @@ export function VisionWakePanel({
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
   const testGesturesRef = useRef<any[] | null>(null);
-  const gestureStateMachineRef = useRef(
-    new GestureHoldStateMachine(1000, 1500),
-  );
-  const holdProgressRef = useRef<GestureHoldProgress | null>(null);
 
   const isTranslatingRef = useRef(false);
   const translationBufferRef = useRef<string[]>([]);
@@ -98,8 +94,8 @@ export function VisionWakePanel({
       },
     }),
   );
-    const openPalmHoldStartRef = useRef<number>(0);
-  
+  const openPalmHoldStartRef = useRef<number>(0);
+
   const smootherRef = useRef<DprGestureStateSmoother>(
     new DprGestureStateSmoother(2, 3),
   );

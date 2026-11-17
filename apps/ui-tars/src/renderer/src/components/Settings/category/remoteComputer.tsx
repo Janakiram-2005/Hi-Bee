@@ -47,7 +47,7 @@ export function RemoteComputerSettings({
   // console.log('initialValues', settings);
 
   const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+    resolver: (zodResolver as any)(formSchema),
     defaultValues: {
       url: '',
       token: '',
