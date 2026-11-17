@@ -54,6 +54,64 @@ HAND_CONNECTIONS = frozenset([
 ])
 
 
+try:
+    from utils.status_reporter import report_status
+except ImportError:
+    def report_status(event: str, data: dict = None) -> None:
+        pass
+
+# Gesture Threshold Bounds
+MIN_HOLD_BOUND = 0.3
+MAX_HOLD_BOUND = 4.0
+DEFAULT_HOLD_TIME = 1.2
+
+DEFAULT_BLINK_THRESHOLD = 0.45
+MIN_BLINK_THRESHOLD = 0.20
+MAX_BLINK_THRESHOLD = 0.90
+DEFAULT_PITCH_THRESHOLD = 15.0
+DEFAULT_YAW_THRESHOLD = 15.0
+
+
+def get_validated_hold_time(gesture: dict, default_hold: float = DEFAULT_HOLD_TIME) -> float:
+    """Validate gesture hold time against configured threshold bounds [0.3s, 4.0s]."""
+    for key in ('hold_threshold', 'hold_time', 'holdTime', 'hold_duration'):
+        if key in gesture and gesture[key] is not None:
+            try:
+                val = float(gesture[key])
+                return max(MIN_HOLD_BOUND, min(MAX_HOLD_BOUND, val))
+            except (ValueError, TypeError):
+                pass
+    return default_hold
+
+
+def validate_face_threshold_bounds(gesture: dict) -> dict:
+    """Validate configured threshold bounds for eye and head gestures."""
+    bounds = gesture.get('threshold_bounds') or {}
+    blink_raw = bounds.get('blink_threshold', gesture.get('blink_threshold', DEFAULT_BLINK_THRESHOLD))
+    try:
+        blink_thresh = max(MIN_BLINK_THRESHOLD, min(MAX_BLINK_THRESHOLD, float(blink_raw)))
+    except (ValueError, TypeError):
+        blink_thresh = DEFAULT_BLINK_THRESHOLD
+
+    pitch_raw = bounds.get('pitch_threshold', gesture.get('pitch_threshold', DEFAULT_PITCH_THRESHOLD))
+    try:
+        pitch_thresh = max(5.0, min(60.0, float(pitch_raw)))
+    except (ValueError, TypeError):
+        pitch_thresh = DEFAULT_PITCH_THRESHOLD
+
+    yaw_raw = bounds.get('yaw_threshold', gesture.get('yaw_threshold', DEFAULT_YAW_THRESHOLD))
+    try:
+        yaw_thresh = max(5.0, min(60.0, float(yaw_raw)))
+    except (ValueError, TypeError):
+        yaw_thresh = DEFAULT_YAW_THRESHOLD
+
+    return {
+        'blink_threshold': blink_thresh,
+        'pitch_threshold': pitch_thresh,
+        'yaw_threshold': yaw_thresh
+    }
+
+
 def _get_coord(pt, attr, default=0.0):
     """Safely extracts a coordinate (x, y, z) from a dict or MediaPipe landmark object."""
     if pt is None:
@@ -216,7 +274,12 @@ def detect_hand_gestures(hand_landmarks, custom_gestures, aspect_ratio=1.0):
 
 
 def detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now,
-                         blink_history, head_history):
+                         blink_history=None, head_history=None):
+    """Matches facial blendshapes and orientation history against custom gestures."""
+    if blink_history is None:
+        blink_history = []
+    if head_history is None:
+        head_history = []
     """Matches facial blendshapes and orientation history against custom gestures."""
     matched = []
 
@@ -254,6 +317,10 @@ def detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, n
     if custom_gestures:
         for g in custom_gestures:
             t = g.get('type', 'hand')
+            bounds = validate_face_threshold_bounds(g)
+            is_nod = pitch_delta > bounds['pitch_threshold'] and yaw_delta < 12.0
+            is_shake = yaw_delta > bounds['yaw_threshold'] and pitch_delta < 12.0
+
             if t == 'eye':
                 ea = g.get('eyeAction')
                 if ea == 'double_blink' and is_double_blink:
@@ -379,6 +446,7 @@ class LocalVisionBrain:
 
         self.custom_gestures = []
         self.load_gestures()
+        self.session_focus_active = False
 
         self.throttler = Base64FrameThrottler(
             target_fps=target_fps,
@@ -405,7 +473,8 @@ class LocalVisionBrain:
         face_blendshapes=None,
         facial_transformation_matrixes=None,
         hand_landmarks_list=None,
-        now=None
+        now=None,
+        emit_progress_events=False
     ):
         """
         Processes vision frame data and returns the structured payload and any triggered events.
@@ -743,7 +812,8 @@ def process_vision():
                 face_blendshapes=results_face.face_blendshapes if results_face else None,
                 facial_transformation_matrixes=results_face.facial_transformation_matrixes if results_face else None,
                 hand_landmarks_list=results_hands.hand_landmarks if results_hands else None,
-                now=now
+                now=now,
+                emit_progress_events=True
             )
 
             # Emit triggered events first

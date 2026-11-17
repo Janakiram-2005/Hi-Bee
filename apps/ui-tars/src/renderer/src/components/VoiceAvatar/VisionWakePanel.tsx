@@ -39,6 +39,7 @@ import {
   createHandLandmarkerWithFallback,
   createFaceLandmarkerWithFallback,
 } from '../../utils/visionLoader';
+import { GestureConfig } from '../../utils/gestureEngine';
 import './VoiceAvatar.css';
 
 export function VisionWakePanel({
@@ -107,6 +108,9 @@ export function VisionWakePanel({
     time: 0,
   });
   const openPalmHoldStartRef = useRef<number>(0);
+  const gestureHoldStartRef = useRef<number>(0);
+  const activeGestureRef = useRef<any>(null);
+  const gestureSessionFocusRef = useRef<boolean>(false);
   const activeHoldRef = useRef<{
     gestureId: string;
     gesture: any;
@@ -934,12 +938,17 @@ export function VisionWakePanel({
                 }),
               );
 
-              if (canvasRef.current) {
-                canvasRef.current.style.boxShadow = '0 0 20px #4ade80';
-                setTimeout(() => {
-                  if (canvasRef.current)
-                    canvasRef.current.style.boxShadow = 'none';
-                }, 1000);
+              if (shouldWake && Date.now() - lastWakeTimeRef.current > 3000) {
+                lastWakeTimeRef.current = Date.now();
+                window.dispatchEvent(new CustomEvent('vision:wake-triggered'));
+
+                if (canvasRef.current) {
+                  canvasRef.current.style.boxShadow = '0 0 20px #4ade80';
+                  setTimeout(() => {
+                    if (canvasRef.current)
+                      canvasRef.current.style.boxShadow = 'none';
+                  }, 1000);
+                }
               }
             }
           }

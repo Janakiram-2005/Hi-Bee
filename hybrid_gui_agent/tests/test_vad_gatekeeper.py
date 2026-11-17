@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 
 # Ensure src/ is on the path for imports
 import os
+os.environ["STATUS_REPORTER_DISABLED"] = "1"
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Patch heavyweight optional deps before importing the module under test
@@ -43,6 +44,9 @@ from audio.vad_gatekeeper import (
     SAMPLE_WIDTH,
     RMS_ENERGY_THRESHOLD,
     INACTIVITY_TIMEOUT_S,
+    DEFAULT_MIN_RMS_THRESHOLD,
+    DEFAULT_MAX_RMS_THRESHOLD,
+    SPEECH_FRAMES_TO_WAKE_CALIBRATED,
 )
 
 
@@ -262,6 +266,154 @@ class TestAudioChunkForwarding(unittest.TestCase):
         gk._on_audio_chunk(frame)
         chunk_cb.assert_called_once_with(frame)
         gk._cancel_inactivity_timer()
+
+
+class TestCalibrationAndThresholdBounds(unittest.TestCase):
+    """Tests for dynamic VAD threshold calibration and configured threshold bounds."""
+
+    def test_default_threshold_bounds(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        self.assertEqual(gk._min_threshold, DEFAULT_MIN_RMS_THRESHOLD)
+        self.assertEqual(gk._max_threshold, DEFAULT_MAX_RMS_THRESHOLD)
+        self.assertGreaterEqual(gk.rms_threshold, DEFAULT_MIN_RMS_THRESHOLD)
+        self.assertLessEqual(gk.rms_threshold, DEFAULT_MAX_RMS_THRESHOLD)
+        self.assertFalse(gk.is_calibrated)
+
+    def test_calibrate_with_explicit_noise_floor(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        # Noise floor 200 * multiplier 1.5 + margin 150 = 450
+        computed = gk.calibrate(noise_floor=200.0, multiplier=1.5, margin=150.0)
+        self.assertEqual(computed, 450.0)
+        self.assertEqual(gk.rms_threshold, 450.0)
+        self.assertEqual(gk.noise_floor, 200.0)
+        self.assertTrue(gk.is_calibrated)
+
+    def test_calibrate_clamps_to_configured_min_threshold(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        # Noise floor 10 * 1.0 + 10 = 20, but min_threshold = 300
+        computed = gk.calibrate(noise_floor=10.0, multiplier=1.0, margin=10.0, min_threshold=300.0)
+        self.assertEqual(computed, 300.0)
+        self.assertEqual(gk.rms_threshold, 300.0)
+
+    def test_calibrate_clamps_to_configured_max_threshold(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        # Noise floor 4000 * 2.0 + 500 = 8500, clamped to max_threshold 5000
+        computed = gk.calibrate(noise_floor=4000.0, multiplier=2.0, margin=500.0, max_threshold=5000.0)
+        self.assertEqual(computed, 5000.0)
+        self.assertEqual(gk.rms_threshold, 5000.0)
+
+    def test_calibrate_with_silent_and_ambient_frames(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        frames = [_make_silent_frame(), _make_loud_frame(amplitude=150)]
+        computed = gk.calibrate(frames=frames, min_threshold=300.0)
+        self.assertGreaterEqual(computed, 300.0)
+        self.assertTrue(gk.is_calibrated)
+
+    def test_noise_floor_adaptation_smoothly_tracks_quiet_frames(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        initial_floor = gk.noise_floor
+        initial_threshold = gk.rms_threshold
+
+        quiet_chunk = _make_loud_frame(amplitude=120)
+        gk._adapt_noise_floor(quiet_chunk)
+
+        # Noise floor should have shifted toward 120
+        self.assertNotEqual(gk.noise_floor, initial_floor)
+        self.assertGreaterEqual(gk.rms_threshold, gk._min_threshold)
+
+
+class TestGestureSessionFocus(unittest.TestCase):
+    """Tests for gesture session focus protection against spurious VAD mode switches."""
+
+    def test_gesture_focus_default_inactive(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        self.assertFalse(gk.gesture_focus_active)
+
+    def test_set_gesture_focus_lifecycle(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock())
+        gk.set_gesture_focus(True)
+        self.assertTrue(gk.gesture_focus_active)
+
+        # Idempotent re-call
+        gk.set_gesture_focus(True)
+        self.assertTrue(gk.gesture_focus_active)
+
+        gk.set_gesture_focus(False)
+        self.assertFalse(gk.gesture_focus_active)
+
+    def test_gesture_focus_suppresses_audio_wake_transition(self):
+        """When gesture focus is active, _transition_to_listening(force=False) must be suppressed."""
+        wake_cb = MagicMock()
+        gk = VADGatekeeper(wake_cb, MagicMock(), MagicMock())
+
+        gk.set_gesture_focus(True)
+        transitioned = gk._transition_to_listening(force=False)
+
+        self.assertFalse(transitioned)
+        self.assertEqual(gk.state, VADState.SLEEPING)
+        wake_cb.assert_not_called()
+
+    def test_gesture_focus_release_allows_wake(self):
+        """Releasing gesture focus restores normal wake transitions."""
+        wake_cb = MagicMock()
+        gk = VADGatekeeper(wake_cb, MagicMock(), MagicMock())
+
+        gk.set_gesture_focus(True)
+        self.assertFalse(gk._transition_to_listening(force=False))
+        wake_cb.assert_not_called()
+
+        gk.set_gesture_focus(False)
+        self.assertTrue(gk._transition_to_listening(force=False))
+        self.assertEqual(gk.state, VADState.LISTENING)
+        wake_cb.assert_called_once()
+        gk._cancel_inactivity_timer()
+
+    def test_manual_hotkey_overrides_gesture_focus(self):
+        """Manual hotkey press is an intentional user override and forces wake even during focus."""
+        wake_cb = MagicMock()
+        gk = VADGatekeeper(wake_cb, MagicMock(), MagicMock())
+
+        gk.set_gesture_focus(True)
+        gk._hotkey_wake_handler()
+
+        self.assertEqual(gk.state, VADState.LISTENING)
+        wake_cb.assert_called_once()
+        gk._cancel_inactivity_timer()
+
+    def test_audio_loop_speech_frames_suppressed_during_gesture_focus(self):
+        """Loud audio energy must not wake system or accumulate frames while gesture focus is active."""
+        wake_cb = MagicMock()
+        gk = VADGatekeeper(wake_cb, MagicMock(), MagicMock())
+        gk._vad = None  # Force RMS detection
+
+        gk.set_gesture_focus(True)
+        loud_chunk = _make_loud_frame(amplitude=5000)
+
+        # Simulate monitor loop logic
+        consecutive_speech_frames = 0
+        for _ in range(10):  # well beyond speech_frames_to_wake
+            if gk.gesture_focus_active:
+                consecutive_speech_frames = 0
+            if gk._detect_speech(loud_chunk) and not gk.gesture_focus_active:
+                consecutive_speech_frames += 1
+
+        self.assertEqual(consecutive_speech_frames, 0)
+        self.assertEqual(gk.state, VADState.SLEEPING)
+        wake_cb.assert_not_called()
+
+
+class TestConfigurableDebounce(unittest.TestCase):
+    """Tests for configurable debounce speech frame window."""
+
+    def test_speech_frames_to_wake_configurable(self):
+        gk = VADGatekeeper(MagicMock(), MagicMock(), MagicMock(), speech_frames_to_wake=5)
+        self.assertEqual(gk.speech_frames_to_wake, 5)
+
+        gk.speech_frames_to_wake = SPEECH_FRAMES_TO_WAKE_CALIBRATED
+        self.assertEqual(gk.speech_frames_to_wake, 5)
+
+        gk.speech_frames_to_wake = 0  # clamps to minimum 1
+        self.assertEqual(gk.speech_frames_to_wake, 1)
 
 
 if __name__ == "__main__":
