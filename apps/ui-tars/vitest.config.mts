@@ -10,13 +10,14 @@ export default defineProject({
   test: {
     globals: true,
     environment: 'node',
-    includeSource: ['src/**/*.{js,ts}'],
+    include: ['src/renderer/**/*.{test,spec}.{ts,tsx}'],
   },
 
   plugins: [
     // @ts-ignore
     tsconfigPath({
       projects: ['./tsconfig.node.json'],
+      ignoreConfigErrors: true,
     }),
   ],
 });

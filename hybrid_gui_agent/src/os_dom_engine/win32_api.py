@@ -7,8 +7,9 @@ from ctypes import wintypes
 SW_RESTORE = 9
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-# Callback prototype for EnumWindows
-EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+# Callback prototype for EnumWindows (fallback to CFUNCTYPE on non-Windows)
+WINFUNCTYPE = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+EnumWindowsProc = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
 def is_admin() -> bool:
     """Check if the active process has administrative privileges."""
