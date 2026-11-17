@@ -64,6 +64,10 @@ export function VisionWakePanel({
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
   const testGesturesRef = useRef<any[] | null>(null);
+  const gestureStateMachineRef = useRef(
+    new GestureHoldStateMachine(1000, 1500),
+  );
+  const holdProgressRef = useRef<GestureHoldProgress | null>(null);
 
   const gestureStateMachineRef = useRef<GestureStateMachine>(
     new GestureStateMachine({
@@ -169,8 +173,8 @@ export function VisionWakePanel({
 
     loadGestures();
 
-    const unsubscribe = window.electron?.ipcRenderer?.on(
-      'gesture:updated' as any,
+    const unsubscribe = (window.electron?.ipcRenderer?.on as any)?.(
+      'gesture:updated',
       loadGestures,
     );
     return () => {
@@ -264,6 +268,13 @@ export function VisionWakePanel({
             // Process Hands
             if (handResults.landmarks && handResults.landmarks.length > 0) {
               for (const landmarks of handResults.landmarks) {
+                // Calculate preview coordinates and check bounds
+                const previewCoordinates = calculateDprPreviewCoordinates(
+                  landmarks,
+                  dprMetrics,
+                );
+                const boundsResult = checkGestureBounds(landmarks);
+
                 const drawingUtils = new DrawingUtils(ctx);
                 drawingUtils.drawConnectors(
                   landmarks,
@@ -276,16 +287,18 @@ export function VisionWakePanel({
 
                 // Draw fingertips
                 for (let i = 0; i < landmarks.length; i++) {
-                  const x = landmarks[i].x * canvas.width;
-                  const y = landmarks[i].y * canvas.height;
+                  const x = previewCoordinates[i].canvas.x;
+                  const y = previewCoordinates[i].canvas.y;
                   ctx.beginPath();
-                  ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                  ctx.arc(x, y, radius, 0, 2 * Math.PI);
                   if ([4, 8, 12, 16, 20].includes(i)) {
                     ctx.fillStyle = '#FF0000';
                   } else {
                     ctx.fillStyle = '#0000FF';
                   }
                   ctx.fill();
+                  ctx.lineWidth = Math.max(1, Math.round(1 * dprMetrics.dpr));
+                  ctx.strokeStyle = '#FFFFFF';
                   ctx.stroke();
                 }
 
@@ -340,11 +353,6 @@ export function VisionWakePanel({
                     // Add cooldown so it doesn't instantly toggle back
                     openPalmHoldStartRef.current = Date.now() + 2000;
                   }
-                } else {
-                  if (Date.now() > openPalmHoldStartRef.current) {
-                    openPalmHoldStartRef.current = 0;
-                  }
-                }
 
                 // Match against configured gestures
                 const gesturesToUse =
@@ -409,6 +417,9 @@ export function VisionWakePanel({
                   }, 300);
                 }
               }
+            } else {
+              // Smooth frame drop when no hands detected
+              smootherRef.current.update(null, false);
             }
 
             // Process Face
@@ -485,18 +496,22 @@ export function VisionWakePanel({
               );
 
               // Legacy trigger
-              if (isBlink || isNodDown) {
+              if (faceState.blink || faceState.nodDown) {
                 shouldWake = true;
               }
 
               if (faceResults.faceLandmarks) {
+                const facePointRadius = Math.max(
+                  1,
+                  Math.round(1.5 * dprMetrics.dpr),
+                );
                 for (const landmarks of faceResults.faceLandmarks) {
                   ctx.fillStyle = '#00FFFF';
                   for (let i = 0; i < landmarks.length; i += 10) {
                     const x = landmarks[i].x * canvas.width;
                     const y = landmarks[i].y * canvas.height;
                     ctx.beginPath();
-                    ctx.arc(x, y, 1, 0, 2 * Math.PI);
+                    ctx.arc(x, y, facePointRadius, 0, 2 * Math.PI);
                     ctx.fill();
                   }
                 }

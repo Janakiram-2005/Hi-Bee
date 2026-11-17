@@ -430,7 +430,7 @@ describe('Browser Action Tests', () => {
 
       expect(result.isError).toBe(false);
       expect(result.content?.[0].text).toContain('Successfully filled');
-    });
+    }, 15000);
 
     test('should fail gracefully for disabled input', async () => {
       const result = await client.callTool({

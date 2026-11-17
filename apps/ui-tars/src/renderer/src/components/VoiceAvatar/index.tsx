@@ -94,12 +94,14 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
               const lang = useVoiceStore.getState().selectedLanguage || 'en-US';
 
               // 1. Show the raw words in the chat as the user turn
-              useVoiceStore.getState().addTurn({
-                id: uuidv4(),
-                role: 'user',
-                text: `[Gestures] ${words.join(' ')}`,
-                timestamp: Date.now(),
-              });
+              useVoiceStore
+                .getState()
+                .addTurn({
+                  id: uuidv4(),
+                  role: 'user',
+                  text: `[Gestures] ${words.join(' ')}`,
+                  timestamp: Date.now(),
+                });
               useVoiceStore.getState().setAvatarState('thinking');
 
               // 2. Call LLM to parse into grammatical sentence
@@ -110,16 +112,19 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
               const parsedText = result.text;
 
               // 3. Show AI response
-              useVoiceStore.getState().addTurn({
-                id: uuidv4(),
-                role: 'assistant',
-                text: parsedText,
-                timestamp: Date.now(),
-              });
+              useVoiceStore
+                .getState()
+                .addTurn({
+                  id: uuidv4(),
+                  role: 'assistant',
+                  text: parsedText,
+                  timestamp: Date.now(),
+                });
               useVoiceStore.getState().setAvatarState('idle');
 
               // 4. Play audio using ElevenLabs
-              // Dispatch an event to the window and listen to it in the component body
+              // We can just set a flag or trigger a custom event that the hook can pick up,
+              // OR we can dispatch an event to the window and listen to it in the component body
               window.dispatchEvent(
                 new CustomEvent('hibee:trigger-speak', { detail: parsedText }),
               );
