@@ -10,6 +10,11 @@ import base64
 import os
 import math
 
+try:
+    from vision_engine.gesture_gatekeeper import GestureGatekeeper, EngagementState
+except ImportError:
+    from gesture_gatekeeper import GestureGatekeeper, EngagementState
+
 HAND_CONNECTIONS = frozenset([
   (0, 1), (1, 2), (2, 3), (3, 4),
   (0, 5), (5, 6), (6, 7), (7, 8),
@@ -50,8 +55,14 @@ def process_vision():
     TARGET_MAX = 0.58
     LOW_LIGHT_THRESHOLD = 40.0
 
-    gaze_start_time = None
-    gesture_states = {} # Tracks held time for gestures
+    gatekeeper = GestureGatekeeper(
+        target_min=TARGET_MIN,
+        target_max=TARGET_MAX,
+        engagement_hold_time_s=1.0,
+        gesture_hold_time_s=HOLD_TIME_REQUIRED,
+        inactivity_timeout_s=3.0,
+        cooldown_s=1.5,
+    )
     blink_history = []
     head_history = []
 
@@ -188,6 +199,7 @@ def process_vision():
             }
 
             current_gestures = []
+            relative_position = None
             
             # Load gestures dynamically
             custom_gestures = load_gestures()
@@ -254,19 +266,6 @@ def process_vision():
                 for mg in face_matched:
                     current_gestures.append(mg)
                 
-                # Gaze holding logic
-                if TARGET_MIN <= relative_position <= TARGET_MAX:
-                    if gaze_start_time is None:
-                        gaze_start_time = now_t
-                    elif now_t - gaze_start_time >= HOLD_TIME_REQUIRED:
-                        print(json.dumps({"type": "vision-wake"}))
-                        sys.stdout.flush()
-                        gaze_start_time = None
-                else:
-                    gaze_start_time = None
-            else:
-                gaze_start_time = None
-            
             if results_hands.hand_landmarks:
                 for hand_landmarks in results_hands.hand_landmarks:
                     pts = [{"x": lm.x, "y": lm.y} for lm in hand_landmarks]
@@ -283,31 +282,34 @@ def process_vision():
                         "gesture": display_gesture,
                         "finger_states": states
                     })
-            
-            # Update gesture holds based on action
+
+            # Process frame through engagement gatekeeper
             now = time.time()
-            active_actions = {g['action']: g for g in current_gestures}
-            
-            for action, g in active_actions.items():
-                if action not in gesture_states:
-                    gesture_states[action] = now
-                elif now - gesture_states[action] >= HOLD_TIME_REQUIRED:
-                    # Emit gesture trigger
-                    print(json.dumps({
-                        "type": "vision-gesture", 
-                        "gesture": g['name'], 
-                        "action": action, 
-                        "actionArg": g.get('actionArg')
-                    }))
-                    sys.stdout.flush()
-                    # Reset to avoid spamming
-                    gesture_states[action] = now + 1.5 # 1.5 second cooldown
-                    
-            # Clear states for actions no longer active
-            inactive_actions = [a for a in gesture_states.keys() if a not in active_actions]
-            for a in inactive_actions:
-                if gesture_states[a] < now: # keep cooldowns active
-                    del gesture_states[a]
+            prev_state = gatekeeper.state
+            current_gaze = relative_position if payload["face_found"] else None
+            gate_result = gatekeeper.process_frame(
+                gaze_position=current_gaze,
+                matched_gestures=current_gestures,
+                face_present=payload["face_found"],
+                now=now,
+            )
+
+            # Trigger wake event on engagement transition to ENGAGED
+            if prev_state != EngagementState.ENGAGED and gatekeeper.state == EngagementState.ENGAGED:
+                print(json.dumps({"type": "vision-wake"}))
+                sys.stdout.flush()
+
+            # Emit deliberate gesture trigger only when engagement gate is open
+            if gate_result["triggered_action"]:
+                print(json.dumps(gate_result["triggered_action"]))
+                sys.stdout.flush()
+
+            # Include consistent gatekeeper state and visual indicators in payload
+            payload["engagement_state"] = gate_result["state"]
+            payload["gated"] = gate_result["gated"]
+            payload["engagement_progress"] = gate_result["engagement_progress"]
+            payload["hold_progress"] = gate_result["hold_progress"]
+            payload["active_gesture"] = gate_result["active_gesture"]
                 
             # --- Draw and Encode Live Frame ---
             # Draw Face Points (lightly) since we don't have tessellation connections
