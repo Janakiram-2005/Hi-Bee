@@ -528,6 +528,72 @@ class TestLocalVisionBrain(unittest.TestCase):
 
         self.assertLess(per_frame_ms, 2.0, f"Frame processing too slow: {per_frame_ms:.4f} ms")
 
+    def test_local_brain_with_gesture_gatekeeper_blocks_spurious_and_triggers_deliberate(self):
+        """Verify GestureGatekeeper integration into LocalVisionBrain gates actions."""
+        from vision_engine.gesture_gatekeeper import GestureGatekeeper
+
+        gk = GestureGatekeeper(
+            target_min=0.42,
+            target_max=0.58,
+            engagement_hold_time_s=0.5,
+            gesture_hold_time_s=0.5,
+            inactivity_timeout_s=3.0,
+            cooldown_s=1.0,
+        )
+        brain_gated = LocalVisionBrain(gatekeeper=gk)
+        brain_gated.custom_gestures = [
+            {
+                "id": "g_vol",
+                "name": "Volume Up",
+                "type": "hand",
+                "action": "volume_up",
+                "actionArg": "+5",
+                "fingers": {"thumb": "closed", "index": "open", "middle": "closed", "ring": "closed", "pinky": "closed"}
+            }
+        ]
+
+        hand_lms = create_canonical_hand(open_fingers=['index'])
+
+        # 1. Without engagement (DISENGAGED), gesture hold does NOT trigger any action
+        t0 = 300.0
+        p, ev = brain_gated.process_frame_data(self.test_frame, hand_landmarks_list=[hand_lms], now=t0)
+        self.assertEqual(len(ev), 0)
+        self.assertTrue(p.get("gated", False))
+        self.assertEqual(p.get("engagement_state"), "DISENGAGED")
+
+        # Hold for 1 second while disengaged
+        p, ev = brain_gated.process_frame_data(self.test_frame, hand_landmarks_list=[hand_lms], now=t0 + 1.0)
+        self.assertEqual(len(ev), 0)
+        self.assertTrue(p.get("gated", True))
+
+        # 2. Engage via center gaze
+        face_lms = [MockLandmark(0.5, 0.5) for _ in range(478)]
+        face_lms[33] = MockLandmark(0.40, 0.5)
+        face_lms[133] = MockLandmark(0.60, 0.5)
+        face_lms[468] = MockLandmark(0.50, 0.5)
+
+        # Hold gaze until ENGAGED (0.5s threshold)
+        brain_gated.process_frame_data(self.test_frame, face_landmarks_list=[face_lms], now=t0 + 2.0)
+        p_eng, ev_eng = brain_gated.process_frame_data(self.test_frame, face_landmarks_list=[face_lms], now=t0 + 2.6)
+        self.assertEqual(p_eng.get("engagement_state"), "ENGAGED")
+        self.assertFalse(p_eng.get("gated"))
+        self.assertTrue(any(e.get("type") == "vision-wake" for e in ev_eng))
+
+        # 3. Deliberate gesture while ENGAGED triggers action after hold threshold
+        brain_gated.process_frame_data(
+            self.test_frame,
+            face_landmarks_list=[face_lms],
+            hand_landmarks_list=[hand_lms],
+            now=t0 + 3.0
+        )
+        p_trig, ev_trig = brain_gated.process_frame_data(
+            self.test_frame,
+            face_landmarks_list=[face_lms],
+            hand_landmarks_list=[hand_lms],
+            now=t0 + 3.6
+        )
+        self.assertTrue(any(e.get("action") == "volume_up" for e in ev_trig))
+
 
 if __name__ == "__main__":
     unittest.main()
