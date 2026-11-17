@@ -25,7 +25,7 @@ function assertEqual(actual: any, expected: any, message: string) {
   }
 }
 
-describe('Gesture Recognition', () => {
+describe('gestureRecognition', () => {
   it('runs all gesture recognition unit tests', () => {
     console.log('--- Running Gesture Recognition Unit Tests ---');
 
