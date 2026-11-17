@@ -22,11 +22,16 @@ export const visionRoute = {
     .handle(async ({ input }) => {
       const fs = require('fs');
       const path = require('path');
-      
+
       try {
         const baseDir = process.cwd(); // or app.getPath('userData')
-        const datasetDir = path.join(baseDir, 'dataset', 'gestures', input.label);
-        
+        const datasetDir = path.join(
+          baseDir,
+          'dataset',
+          'gestures',
+          input.label,
+        );
+
         if (!fs.existsSync(datasetDir)) {
           fs.mkdirSync(datasetDir, { recursive: true });
         }
@@ -34,21 +39,26 @@ export const visionRoute = {
         const timestamp = new Date().getTime();
         const videoFilename = `video_${timestamp}.webm`;
         const jsonFilename = `data_${timestamp}.json`;
-        
+
         const videoPath = path.join(datasetDir, videoFilename);
         const jsonPath = path.join(datasetDir, jsonFilename);
 
         // Save Video
-        const base64Data = input.videoBase64.replace(/^data:video\/webm;base64,/, '');
+        const base64Data = input.videoBase64.replace(
+          /^data:video\/webm;base64,/,
+          '',
+        );
         const buffer = Buffer.from(base64Data, 'base64');
         fs.writeFileSync(videoPath, buffer);
-        
+
         // Save JSON Landmarks
         if (input.landmarksJson) {
           fs.writeFileSync(jsonPath, input.landmarksJson, 'utf8');
         }
 
-        logger.info(`[Vision] Saved gesture dataset: ${videoPath} and ${jsonPath}`);
+        logger.info(
+          `[Vision] Saved gesture dataset: ${videoPath} and ${jsonPath}`,
+        );
 
         return { success: true, filePath: videoPath };
       } catch (err) {
@@ -62,11 +72,22 @@ export const visionRoute = {
     const path = require('path');
     const baseDir = process.cwd();
     const datasetDir = path.join(baseDir, 'dataset', 'gestures');
-    const dbPath = path.join(baseDir, 'apps', 'ui-tars', 'src', 'renderer', 'src', 'const', 'gesture_db.json');
+    const dbPath = path.join(
+      baseDir,
+      'apps',
+      'ui-tars',
+      'src',
+      'renderer',
+      'src',
+      'const',
+      'gesture_db.json',
+    );
 
     let db: Record<string, string> = {};
     if (fs.existsSync(dbPath)) {
-      try { db = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch(e){}
+      try {
+        db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      } catch (e) {}
     }
 
     const library: any[] = [];
@@ -80,7 +101,10 @@ export const visionRoute = {
           library.push({
             label,
             text: db[label] || '',
-            videos: videos.map((v: string) => `file://${path.join(labelDir, v).replace(/\\/g, '/')}`)
+            videos: videos.map(
+              (v: string) =>
+                `file://${path.join(labelDir, v).replace(/\\/g, '/')}`,
+            ),
           });
         }
       }
@@ -93,13 +117,24 @@ export const visionRoute = {
     .handle(async ({ input }) => {
       const fs = require('fs');
       const path = require('path');
-      const dbPath = path.join(process.cwd(), 'apps', 'ui-tars', 'src', 'renderer', 'src', 'const', 'gesture_db.json');
-      
+      const dbPath = path.join(
+        process.cwd(),
+        'apps',
+        'ui-tars',
+        'src',
+        'renderer',
+        'src',
+        'const',
+        'gesture_db.json',
+      );
+
       let db: Record<string, string> = {};
       if (fs.existsSync(dbPath)) {
-        try { db = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch(e){}
+        try {
+          db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        } catch (e) {}
       }
-      
+
       db[input.label] = input.text;
       fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), 'utf8');
       return { success: true };
@@ -113,9 +148,11 @@ export const visionRoute = {
         const localPath = input.videoPath.replace('file://', '');
         if (fs.existsSync(localPath)) {
           fs.unlinkSync(localPath);
-          
+
           // Try to delete corresponding .json
-          const jsonPath = localPath.replace('.webm', '.json').replace('video_', 'data_');
+          const jsonPath = localPath
+            .replace('.webm', '.json')
+            .replace('video_', 'data_');
           if (fs.existsSync(jsonPath)) {
             fs.unlinkSync(jsonPath);
           }
@@ -134,13 +171,22 @@ export const visionRoute = {
       try {
         const baseDir = process.cwd();
         const labelDir = path.join(baseDir, 'dataset', 'gestures', input.label);
-        
+
         if (fs.existsSync(labelDir)) {
           fs.rmSync(labelDir, { recursive: true, force: true });
         }
-        
+
         // Remove from DB
-        const dbPath = path.join(baseDir, 'apps', 'ui-tars', 'src', 'renderer', 'src', 'const', 'gesture_db.json');
+        const dbPath = path.join(
+          baseDir,
+          'apps',
+          'ui-tars',
+          'src',
+          'renderer',
+          'src',
+          'const',
+          'gesture_db.json',
+        );
         if (fs.existsSync(dbPath)) {
           const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
           if (db[input.label]) {
@@ -161,15 +207,34 @@ export const visionRoute = {
       const path = require('path');
       try {
         const baseDir = process.cwd();
-        const oldDir = path.join(baseDir, 'dataset', 'gestures', input.oldLabel);
-        const newDir = path.join(baseDir, 'dataset', 'gestures', input.newLabel);
-        
+        const oldDir = path.join(
+          baseDir,
+          'dataset',
+          'gestures',
+          input.oldLabel,
+        );
+        const newDir = path.join(
+          baseDir,
+          'dataset',
+          'gestures',
+          input.newLabel,
+        );
+
         if (fs.existsSync(oldDir)) {
           fs.renameSync(oldDir, newDir);
         }
 
         // Update DB
-        const dbPath = path.join(baseDir, 'apps', 'ui-tars', 'src', 'renderer', 'src', 'const', 'gesture_db.json');
+        const dbPath = path.join(
+          baseDir,
+          'apps',
+          'ui-tars',
+          'src',
+          'renderer',
+          'src',
+          'const',
+          'gesture_db.json',
+        );
         if (fs.existsSync(dbPath)) {
           const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
           if (db[input.oldLabel]) {
@@ -190,27 +255,43 @@ export const visionRoute = {
     const fs = require('fs');
     return new Promise((resolve) => {
       const possibleScripts = [
-        path.join(process.cwd(), 'apps', 'ui-tars', 'dataset', 'train_word_model.py'),
+        path.join(
+          process.cwd(),
+          'apps',
+          'ui-tars',
+          'dataset',
+          'train_word_model.py',
+        ),
         path.join(process.cwd(), 'dataset', 'train_word_model.py'),
-        path.join(process.cwd(), 'apps', 'ui-tars', 'dataset', 'train_model.py'),
+        path.join(
+          process.cwd(),
+          'apps',
+          'ui-tars',
+          'dataset',
+          'train_model.py',
+        ),
         path.join(process.cwd(), 'dataset', 'train_model.py'),
         path.resolve(__dirname, '../../dataset/train_word_model.py'),
         path.resolve(__dirname, '../../../dataset/train_word_model.py'),
         path.resolve(__dirname, '../../../../dataset/train_word_model.py'),
       ];
-      const scriptPath = possibleScripts.find((p: string) => fs.existsSync(p)) || possibleScripts[0];
+      const scriptPath =
+        possibleScripts.find((p: string) => fs.existsSync(p)) ||
+        possibleScripts[0];
       logger.info(`[Vision] Executing model training script: ${scriptPath}`);
-
       // Execute the python script
-      exec(`python "${scriptPath}"`, (error: any, stdout: string, stderr: string) => {
-        if (error) {
-          logger.error('[Vision] Training error:', error);
-          resolve({ success: false, error: stderr || error.message });
-          return;
-        }
-        // Assuming the script prints the accuracy or success message
-        resolve({ success: true, output: stdout });
-      });
+      exec(
+        `python "${scriptPath}"`,
+        (error: any, stdout: string, stderr: string) => {
+          if (error) {
+            logger.error('[Vision] Training error:', error);
+            resolve({ success: false, error: stderr || error.message });
+            return;
+          }
+          // Assuming the script prints the accuracy or success message
+          resolve({ success: true, output: stdout });
+        },
+      );
     });
   }),
 
@@ -219,36 +300,40 @@ export const visionRoute = {
     .handle(async ({ input }) => {
       try {
         const { keywords } = input;
-        logger.info(`[visionRoute] processGestureSentence keywords: ${keywords.join(', ')}`);
+        logger.info(
+          `[visionRoute] processGestureSentence keywords: ${keywords.join(', ')}`,
+        );
 
-        if (keywords.length === 0) return { success: false, error: 'Empty sequence' };
+        if (keywords.length === 0)
+          return { success: false, error: 'Empty sequence' };
 
         // 1. AI Text Parsing
         const prompt = `Turn this sequence of signed keywords into a natural, grammatically correct spoken sentence.
 Keywords: [${keywords.join(', ')}]
 Only return the final sentence, no other text.`;
-        
+
         const result = await vertexChat(prompt, [], 'en-US');
         const refinedSentence = result.text.trim();
         logger.info(`[visionRoute] AI refined sentence: ${refinedSentence}`);
 
         // 2. Voice Generation
         const { SettingStore } = await import('@main/store/setting');
-        const settings = SettingStore.getStore();
+        const settings = SettingStore.getStore() as any;
         const languageCode = settings?.voiceLanguage || 'en-US';
-        const voiceId = settings?.voiceAccentUri || settings?.voiceAccent || undefined;
+        const voiceId =
+          settings?.voiceAccentUri || settings?.voiceAccent || undefined;
 
         const ttsResult = await TTSFactory.synthesizeSpeech({
           text: refinedSentence,
           languageCode,
-          voiceId
+          voiceId,
         });
 
         // 3. Play audio immediately
         if (ttsResult.audioContent) {
-          windowManager.broadcast('voice:play-audio', { 
+          windowManager.broadcast('voice:play-audio', {
             audioContent: ttsResult.audioContent,
-            text: refinedSentence
+            text: refinedSentence,
           });
         }
 
@@ -260,5 +345,5 @@ Only return the final sentence, no other text.`;
         logger.error(`[visionRoute] processGestureSentence error:`, err);
         return { success: false, error: String(err) };
       }
-    })
+    }),
 };
