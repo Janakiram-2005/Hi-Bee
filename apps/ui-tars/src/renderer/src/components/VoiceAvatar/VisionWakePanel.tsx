@@ -6,6 +6,15 @@ import {
   FaceLandmarker,
   DrawingUtils,
 } from '@mediapipe/tasks-vision';
+import './VoiceAvatar.css';
+import {
+  validateAndSanitizeLandmarks,
+  computeFingerStates,
+  isOpenPalmState,
+  computeFaceState,
+  validateAndSanitizeFaceLandmarks,
+  HandStateEventDetail,
+} from '../../utils/gestureState';
 import {
   matchHandGesture,
   validateLandmarkBounds,
@@ -225,11 +234,40 @@ export function VisionWakePanel({
             let detectedGesture: any = null;
 
             // Process Hands
-            if (handResults.landmarks) {
-              for (const landmarks of handResults.landmarks) {
+            if (handResults.landmarks && handResults.landmarks.length > 0) {
+              for (const rawLandmarks of handResults.landmarks) {
+                // Bounds check and sanitize landmark coordinates
+                const landmarks = validateAndSanitizeLandmarks(rawLandmarks);
+                if (!landmarks) {
+                  // Corrupted landmark frame detected -> emit drop / invalid notification
+                  window.dispatchEvent(
+                    new CustomEvent('vision:raw-hand-state', {
+                      detail: {
+                        thumb: 'closed',
+                        index: 'closed',
+                        middle: 'closed',
+                        ring: 'closed',
+                        pinky: 'closed',
+                        fingers: {
+                          thumb: 'closed',
+                          index: 'closed',
+                          middle: 'closed',
+                          ring: 'closed',
+                          pinky: 'closed',
+                        },
+                        landmarks: null,
+                        coordinates: null,
+                        isValid: false,
+                        isFrameDrop: true,
+                      },
+                    }),
+                  );
+                  continue;
+                }
+
                 const drawingUtils = new DrawingUtils(ctx);
                 drawingUtils.drawConnectors(
-                  landmarks,
+                  landmarks as any,
                   HandLandmarker.HAND_CONNECTIONS,
                   { color: '#00FF00', lineWidth: 2 },
                 );
@@ -387,12 +425,33 @@ export function VisionWakePanel({
                 const middleTip = landmarks[12];
                 if (
                   !detectedGesture &&
+                  thumbTip &&
+                  indexTip &&
+                  middleTip &&
                   indexTip.y < middleTip.y - 0.1 &&
                   Math.abs(thumbTip.y - indexTip.y) > 0.1
                 ) {
                   shouldWake = true;
                 }
               }
+            } else {
+              // Frame drop: no hands detected in current video frame
+              window.dispatchEvent(
+                new CustomEvent('vision:raw-hand-state', {
+                  detail: {
+                    thumb: 'closed',
+                    index: 'closed',
+                    middle: 'closed',
+                    ring: 'closed',
+                    pinky: 'closed',
+                    fingers: null,
+                    landmarks: null,
+                    coordinates: null,
+                    isValid: false,
+                    isFrameDrop: true,
+                  },
+                }),
+              );
             }
 
             // Process Face
@@ -469,7 +528,7 @@ export function VisionWakePanel({
               );
 
               // Legacy trigger
-              if (isBlink || isNodDown) {
+              if (faceState.blink || faceState.nodDown) {
                 shouldWake = true;
               }
 
