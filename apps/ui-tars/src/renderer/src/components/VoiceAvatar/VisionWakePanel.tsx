@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Eye, EyeOff, Video, VideoOff, AlertTriangle } from 'lucide-react';
 import {
   FilesetResolver,
@@ -34,7 +34,7 @@ export function VisionWakePanel({
 
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
   const lastVideoTimeRef = useRef<number>(-1);
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
