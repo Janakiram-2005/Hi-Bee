@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Eye,
   EyeOff,
@@ -36,8 +36,6 @@ import {
 } from '../../utils/visionLoader';
 import {
   GestureStateMachine,
-  computeFingerStates,
-  isOpenPalm,
   findMatchingGesture,
   GestureConfig,
 } from '../../utils/gestureEngine';
@@ -46,9 +44,13 @@ import './VoiceAvatar.css';
 export function VisionWakePanel({
   autoStart = false,
   testGestures = null,
+  holdThresholdMs = 1000,
+  cooldownMs = 2000,
 }: {
   autoStart?: boolean;
   testGestures?: any[] | null;
+  holdThresholdMs?: number;
+  cooldownMs?: number;
 }) {
   const [isVisionEnabled, setIsVisionEnabled] = useState(autoStart);
   const [isPreviewEnabled, setIsPreviewEnabled] = useState(autoStart);
@@ -64,6 +66,7 @@ export function VisionWakePanel({
   const [initRetryKey, setInitRetryKey] = useState<number>(0);
 
   const [isTranslating, setIsTranslating] = useState(false);
+  const [holdProgress, setHoldProgress] = useState<number>(0);
   const [activeHoldProgress, setActiveHoldProgress] = useState<number>(0);
   const [activeCandidate, setActiveCandidate] = useState<GestureConfig | null>(
     null,
@@ -505,58 +508,10 @@ export function VisionWakePanel({
                 const gesturesToUse =
                   testGesturesRef.current || configuredGesturesRef.current;
                 if (gesturesToUse && gesturesToUse.length > 0) {
-                  for (const g of gesturesToUse) {
-                    const match = [
-                      'thumb',
-                      'index',
-                      'middle',
-                      'ring',
-                      'pinky',
-                    ].every((finger) => {
-                      const req = g.fingers[finger];
-                      return (
-                        req === 'any' ||
-                        req ===
-                          currentState[finger as keyof typeof currentState]
-                      );
-                    });
-                    if (match) {
-                      detectedGesture = g;
-                      break;
-                    }
-                  }
-                }
-
-                // If in translation mode, buffer the gesture
-                if (
-                  isTranslatingRef.current &&
-                  detectedGesture &&
-                  !isOpenPalm
-                ) {
-                  const label =
-                    detectedGesture.actionArg ||
-                    detectedGesture.name ||
-                    detectedGesture.label;
-                  if (
-                    label &&
-                    (label !== lastAddedGestureRef.current.name ||
-                      Date.now() - lastAddedGestureRef.current.time > 1500)
-                  ) {
-                    translationBufferRef.current.push(label);
-                    lastAddedGestureRef.current = {
-                      name: label,
-                      time: Date.now(),
-                    };
-
-                    // Brief flash to indicate word recorded
-                    if (canvasRef.current) {
-                      canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
-                      setTimeout(() => {
-                        if (canvasRef.current)
-                          canvasRef.current.style.boxShadow = 'none';
-                      }, 300);
-                    }
-                  }
+                  frameCandidate = findMatchingGesture(
+                    currentState,
+                    gesturesToUse,
+                  );
                 }
 
                 // Fallback L-shape wake (if no config matched but matches L-shape roughly)
@@ -564,6 +519,7 @@ export function VisionWakePanel({
                 const indexTip = correctedLandmarks[8];
                 const middleTip = correctedLandmarks[12];
                 if (
+                  !frameCandidate &&
                   !detectedGesture &&
                   indexTip.y < middleTip.y - 0.1 &&
                   Math.abs(
@@ -573,9 +529,60 @@ export function VisionWakePanel({
                   shouldWake = true;
                 }
               }
+
+              // Update Gesture State Machine for threshold validation, hold progress, and spurious suppression
+              const smUpdate = gestureStateMachineRef.current.update(
+                frameCandidate,
+                Date.now(),
+              );
+              setActiveHoldProgress(smUpdate.holdProgress);
+              setActiveCandidate(smUpdate.candidateGesture);
+
+              if (smUpdate.state === 'TRIGGERED' && smUpdate.triggeredGesture) {
+                detectedGesture = smUpdate.triggeredGesture;
+              }
+
+              // If in translation mode, buffer the gesture
+              if (
+                isTranslatingRef.current &&
+                detectedGesture &&
+                !openPalmHoldStartRef.current
+              ) {
+                const label =
+                  detectedGesture.actionArg ||
+                  detectedGesture.name ||
+                  detectedGesture.label;
+                if (
+                  label &&
+                  (label !== lastAddedGestureRef.current.name ||
+                    Date.now() - lastAddedGestureRef.current.time > 1500)
+                ) {
+                  translationBufferRef.current.push(label);
+                  lastAddedGestureRef.current = {
+                    name: label,
+                    time: Date.now(),
+                  };
+
+                  // Brief flash to indicate word recorded
+                  if (canvasRef.current) {
+                    canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
+                    setTimeout(() => {
+                      if (canvasRef.current)
+                        canvasRef.current.style.boxShadow = 'none';
+                    }, 300);
+                  }
+                }
+              }
             } else {
               // Smooth frame drop when no hands detected
               smootherRef.current.update(null, false);
+              setHoldProgress(0);
+              const smUpdate = gestureStateMachineRef.current.update(
+                null,
+                Date.now(),
+              );
+              setActiveHoldProgress(smUpdate.holdProgress);
+              setActiveCandidate(smUpdate.candidateGesture);
             }
 
             // Process Face
