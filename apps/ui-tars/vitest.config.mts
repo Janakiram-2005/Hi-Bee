@@ -17,6 +17,7 @@ export default defineProject({
     // @ts-ignore
     tsconfigPath({
       projects: ['./tsconfig.node.json'],
+      ignoreConfigErrors: true,
     }),
   ],
 });

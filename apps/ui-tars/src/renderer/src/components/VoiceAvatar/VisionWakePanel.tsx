@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Eye, EyeOff, Video, VideoOff, AlertTriangle } from 'lucide-react';
 import {
   FilesetResolver,
@@ -7,7 +7,11 @@ import {
   DrawingUtils,
 } from '@mediapipe/tasks-vision';
 import {
-  getCanvasDprMetrics,
+  MultiHandHoldTracker,
+  HandLandmarkerResults,
+} from './multiHandHoldTracker';
+  import {
+getCanvasDprMetrics,
   calculateDprPreviewCoordinates,
   checkGestureBounds,
   computeDprFingerStates,
@@ -18,9 +22,13 @@ import './VoiceAvatar.css';
 export function VisionWakePanel({
   autoStart = false,
   testGestures = null,
+  holdThresholdMs = 1000,
+  cooldownMs = 2000,
 }: {
   autoStart?: boolean;
   testGestures?: any[] | null;
+  holdThresholdMs?: number;
+  cooldownMs?: number;
 }) {
   const [isVisionEnabled, setIsVisionEnabled] = useState(autoStart);
   const [isPreviewEnabled, setIsPreviewEnabled] = useState(autoStart);
@@ -28,6 +36,7 @@ export function VisionWakePanel({
   const [engineReady, setEngineReady] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -50,7 +59,47 @@ export function VisionWakePanel({
     name: '',
     time: 0,
   });
-  const openPalmHoldStartRef = useRef<number>(0);
+
+  const handleToggleMode = useCallback((handKey?: string) => {
+    const newTranslatingState = !isTranslatingRef.current;
+    isTranslatingRef.current = newTranslatingState;
+    setIsTranslating(newTranslatingState);
+    console.log(
+      `[VisionWake] Mode toggled: isTranslating=${newTranslatingState} by hand ${handKey}`,
+    );
+
+    if (!newTranslatingState && translationBufferRef.current.length > 0) {
+      window.electron?.ipcRenderer
+        ?.invoke('visionRoute.processGestureSentence', {
+          keywords: translationBufferRef.current,
+        })
+        .catch(console.error);
+      translationBufferRef.current = [];
+    }
+
+    if (canvasRef.current) {
+      canvasRef.current.style.boxShadow = newTranslatingState
+        ? '0 0 20px #a855f7'
+        : '0 0 20px #ef4444';
+      setTimeout(() => {
+        if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+      }, 1000);
+    }
+  }, []);
+
+  const trackerRef = useRef<MultiHandHoldTracker>(
+    new MultiHandHoldTracker({
+      holdDurationMs: holdThresholdMs,
+      cooldownMs: cooldownMs,
+      fingerExtensionRatio: 1.0,
+      frameDropGraceMs: 150,
+      onTrigger: (handKey) => {
+        handleToggleMode(handKey);
+      },
+    }),
+  );
+    const openPalmHoldStartRef = useRef<number>(0);
+  
   const smootherRef = useRef<DprGestureStateSmoother>(
     new DprGestureStateSmoother(2, 3),
   );
@@ -241,7 +290,36 @@ export function VisionWakePanel({
             let detectedGesture: any = null;
 
             // Process Hands
-            if (handResults.landmarks && handResults.landmarks.length > 0) {
+            if (handResults.landmarks) {
+              const holdResult = trackerRef.current.processFrame(
+                handResults as HandLandmarkerResults,
+                Date.now(),
+              );
+              setHoldProgress(
+                holdResult.isHolding ? holdResult.activeHoldProgress : 0,
+              );
+
+              // Dispatch global hold progress event for UI layers
+              window.dispatchEvent(
+                new CustomEvent('vision:hold-progress', {
+                  detail: {
+                    isHolding: holdResult.isHolding,
+                    progress: holdResult.activeHoldProgress,
+                    activeHandKey: holdResult.activeHandKey,
+                    inCooldown: holdResult.inCooldown,
+                  },
+                }),
+              );
+
+              // Dispatch primary finger state for gestures page
+              if (holdResult.primaryFingerState) {
+                window.dispatchEvent(
+                  new CustomEvent('vision:raw-hand-state', {
+                    detail: holdResult.primaryFingerState,
+                  }),
+                );
+              }
+
               for (const landmarks of handResults.landmarks) {
                 // Calculate preview coordinates and check bounds
                 const previewCoordinates = calculateDprPreviewCoordinates(
@@ -709,6 +787,51 @@ export function VisionWakePanel({
             }}
           ></span>
           Gesture Translation Active...
+        </div>
+      )}
+
+      {holdProgress > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+            padding: '8px',
+            background: 'rgba(59, 130, 246, 0.2)',
+            color: '#93c5fd',
+            borderRadius: '6px',
+            fontSize: '12px',
+            border: '1px solid rgba(59, 130, 246, 0.4)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>Hold to toggle mode...</span>
+            <span>{Math.round(holdProgress * 100)}%</span>
+          </div>
+          <div
+            style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round(holdProgress * 100)}%`,
+                height: '100%',
+                background: '#60a5fa',
+                transition: 'width 0.1s linear',
+              }}
+            ></div>
+          </div>
         </div>
       )}
 
