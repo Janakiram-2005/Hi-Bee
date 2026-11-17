@@ -39,7 +39,6 @@ import {
   createHandLandmarkerWithFallback,
   createFaceLandmarkerWithFallback,
 } from '../../utils/visionLoader';
-import { GestureConfig } from '../../utils/gestureEngine';
 import './VoiceAvatar.css';
 
 export function VisionWakePanel({
@@ -107,7 +106,6 @@ export function VisionWakePanel({
     name: '',
     time: 0,
   });
-  const openPalmHoldStartRef = useRef<number>(0);
   const gestureHoldStartRef = useRef<number>(0);
   const activeGestureRef = useRef<any>(null);
   const gestureSessionFocusRef = useRef<boolean>(false);
@@ -188,8 +186,8 @@ export function VisionWakePanel({
     }),
   );
 
-  const smootherRef = useRef<DprGestureStateSmoother>(
-    new DprGestureStateSmoother(2, 3),
+  const smootherRef = useRef<GestureStateSmoother>(
+    new GestureStateSmoother(2, 3),
   );
 
   useEffect(() => {
@@ -552,8 +550,8 @@ export function VisionWakePanel({
                     const configuredHoldDuration =
                       detectedGesture.holdDuration || 800; // ms
                     const wrist = previewCoordinates[0]?.canvas || {
-                      x: landmarks[0].x * canvas.width,
-                      y: landmarks[0].y * canvas.height,
+                      x: rawLandmarks[0].x * canvas.width,
+                      y: rawLandmarks[0].y * canvas.height,
                     };
 
                     const currentHold = activeHoldRef.current;
@@ -744,18 +742,19 @@ export function VisionWakePanel({
                       (thumbTip.x - indexTip.x) * cropMetrics.targetAspectRatio,
                     ) > 0.1
                   ) {
+                    const fallbackLabel = 'L-Shape';
                     if (
                       translationBufferRef.current.length <
                       MAX_TRANSLATION_BUFFER_SIZE
                     ) {
-                      translationBufferRef.current.push(label);
+                      translationBufferRef.current.push(fallbackLabel);
                       lastAddedGestureRef.current = {
-                        name: label,
+                        name: fallbackLabel,
                         time: Date.now(),
                       };
                       console.log(
                         '[VisionWakePanel] Gesture buffered:',
-                        label,
+                        fallbackLabel,
                         'Buffer:',
                         translationBufferRef.current,
                       );
@@ -901,6 +900,75 @@ export function VisionWakePanel({
                 if (rightX > leftX) {
                   relativePosition = (flm[468].x - leftX) / (rightX - leftX);
                 }
+              }
+            }
+
+            // Validate threshold bounds and handle gesture session focus
+            if (detectedGesture) {
+              const rawHold =
+                detectedGesture.holdTime ||
+                detectedGesture.hold_threshold ||
+                detectedGesture.threshold_bounds?.hold_time ||
+                1200;
+              const holdRequired = Math.max(
+                300,
+                Math.min(4000, Number(rawHold) || 1200),
+              );
+
+              if (!gestureSessionFocusRef.current) {
+                gestureSessionFocusRef.current = true;
+                window.dispatchEvent(
+                  new CustomEvent('vision:gesture-session-focus', {
+                    detail: { active: true, gesture: detectedGesture.name },
+                  }),
+                );
+              }
+
+              if (
+                gestureHoldStartRef.current === 0 ||
+                activeGestureRef.current?.name !== detectedGesture.name
+              ) {
+                gestureHoldStartRef.current = Date.now();
+                activeGestureRef.current = detectedGesture;
+              }
+
+              const elapsed = Date.now() - gestureHoldStartRef.current;
+              const progress = Math.min(1.0, elapsed / holdRequired);
+              window.dispatchEvent(
+                new CustomEvent('vision:gesture-hold-progress', {
+                  detail: { gesture: detectedGesture.name, progress },
+                }),
+              );
+
+              // Visual hold indicator on canvas
+              ctx.save();
+              ctx.strokeStyle = '#3b82f6';
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.arc(
+                canvas.width - 24,
+                24,
+                14,
+                -Math.PI / 2,
+                -Math.PI / 2 + progress * 2 * Math.PI,
+              );
+              ctx.stroke();
+              ctx.restore();
+            } else {
+              if (gestureSessionFocusRef.current) {
+                gestureSessionFocusRef.current = false;
+                gestureHoldStartRef.current = 0;
+                activeGestureRef.current = null;
+                window.dispatchEvent(
+                  new CustomEvent('vision:gesture-session-focus', {
+                    detail: { active: false },
+                  }),
+                );
+                window.dispatchEvent(
+                  new CustomEvent('vision:gesture-hold-progress', {
+                    detail: { progress: 0 },
+                  }),
+                );
               }
             }
 
