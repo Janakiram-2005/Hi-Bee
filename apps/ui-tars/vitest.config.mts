@@ -15,13 +15,14 @@ export default defineProject({
   test: {
     globals: true,
     environment: 'node',
-    includeSource: [resolve(__dirname, '.')],
+    include: ['src/**/*.test.ts'],
   },
 
   plugins: [
     // @ts-ignore
     tsconfigPath({
       projects: ['./tsconfig.node.json'],
+      ignoreConfigErrors: true,
     }),
   ],
 });
