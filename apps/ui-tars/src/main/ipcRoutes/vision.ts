@@ -187,8 +187,12 @@ export const visionRoute = {
   trainCustomModel: t.procedure.handle(async () => {
     const { exec } = require('child_process');
     const path = require('path');
+    const fs = require('fs');
     return new Promise((resolve) => {
-      const scriptPath = path.join(process.cwd(), 'apps', 'ui-tars', 'dataset', 'train_model.py');
+      let scriptPath = path.join(process.cwd(), 'apps', 'ui-tars', 'dataset', 'train_word_model.py');
+      if (!fs.existsSync(scriptPath)) {
+        scriptPath = path.join(process.cwd(), 'apps', 'ui-tars', 'dataset', 'train_model.py');
+      }
       // Execute the python script
       exec(`python "${scriptPath}"`, (error: any, stdout: string, stderr: string) => {
         if (error) {

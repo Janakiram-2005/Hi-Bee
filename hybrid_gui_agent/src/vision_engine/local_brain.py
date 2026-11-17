@@ -54,6 +54,7 @@ def process_vision():
     gesture_states = {} # Tracks held time for gestures
     blink_history = []
     head_history = []
+    hand_history = []
 
     gesture_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     
@@ -272,6 +273,17 @@ def process_vision():
                     pts = [{"x": lm.x, "y": lm.y} for lm in hand_landmarks]
                     matched_gestures, states = detect_hand_gestures(hand_landmarks, custom_gestures)
                     
+                    # Track temporal trajectory dynamics for hands
+                    wrist = hand_landmarks[0]
+                    index_tip = hand_landmarks[8]
+                    now_t = time.time()
+                    hand_history.append({
+                        "time": now_t,
+                        "wrist": {"x": wrist.x, "y": wrist.y, "z": wrist.z},
+                        "index": {"x": index_tip.x, "y": index_tip.y, "z": index_tip.z}
+                    })
+                    hand_history = [h for h in hand_history if now_t - h['time'] < 1.5]
+                    
                     # We just take the first matched gesture name for display purposes
                     display_gesture = matched_gestures[0]['name'] if matched_gestures else "none"
                     
@@ -289,25 +301,52 @@ def process_vision():
             active_actions = {g['action']: g for g in current_gestures}
             
             for action, g in active_actions.items():
+                raw_hold = g.get('holdDuration', HOLD_TIME_REQUIRED)
+                target_hold = (raw_hold / 1000.0) if raw_hold > 10 else raw_hold
+                
                 if action not in gesture_states:
                     gesture_states[action] = now
-                elif now - gesture_states[action] >= HOLD_TIME_REQUIRED:
-                    # Emit gesture trigger
                     print(json.dumps({
-                        "type": "vision-gesture", 
-                        "gesture": g['name'], 
-                        "action": action, 
-                        "actionArg": g.get('actionArg')
+                        "type": "gesture-state-transition",
+                        "state": "holding",
+                        "gesture": g['name'],
+                        "action": action,
+                        "progress": 0.0
                     }))
                     sys.stdout.flush()
-                    # Reset to avoid spamming
-                    gesture_states[action] = now + 1.5 # 1.5 second cooldown
+                else:
+                    hold_elapsed = now - gesture_states[action]
+                    hold_progress = min(1.0, hold_elapsed / target_hold)
+                    if hold_elapsed >= target_hold:
+                        # Emit gesture trigger
+                        print(json.dumps({
+                            "type": "vision-gesture", 
+                            "gesture": g['name'], 
+                            "action": action, 
+                            "actionArg": g.get('actionArg')
+                        }))
+                        print(json.dumps({
+                            "type": "gesture-state-transition",
+                            "state": "triggered",
+                            "gesture": g['name'],
+                            "action": action,
+                            "progress": 1.0
+                        }))
+                        sys.stdout.flush()
+                        # Reset to avoid spamming
+                        gesture_states[action] = now + 1.5 # 1.5 second cooldown
                     
             # Clear states for actions no longer active
-            inactive_actions = [a for a in gesture_states.keys() if a not in active_actions]
+            inactive_actions = [a for a in list(gesture_states.keys()) if a not in active_actions]
             for a in inactive_actions:
                 if gesture_states[a] < now: # keep cooldowns active
                     del gesture_states[a]
+                    print(json.dumps({
+                        "type": "gesture-state-transition",
+                        "state": "idle",
+                        "action": a
+                    }))
+                    sys.stdout.flush()
                 
             # --- Draw and Encode Live Frame ---
             # Draw Face Points (lightly) since we don't have tessellation connections

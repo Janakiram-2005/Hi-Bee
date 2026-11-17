@@ -26,6 +26,8 @@ export function VisionWakePanel({ autoStart = false, testGestures = null }: { au
   const translationBufferRef = useRef<string[]>([]);
   const lastAddedGestureRef = useRef<{ name: string, time: number }>({ name: '', time: 0 });
   const openPalmHoldStartRef = useRef<number>(0);
+  const activeHoldRef = useRef<{ gestureId: string, gesture: any, startTime: number, lastSeenTime: number, triggered: boolean, startWrist: { x: number, y: number } } | null>(null);
+  const lastGestureTriggerTimeRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     testGesturesRef.current = testGestures;
@@ -261,6 +263,83 @@ export function VisionWakePanel({ autoStart = false, testGestures = null }: { au
                   }
                 }
 
+                // Temporal gesture dynamics & hold validation
+                const now = Date.now();
+                if (detectedGesture) {
+                  const configuredHoldDuration = detectedGesture.holdDuration || 800; // ms
+                  const wrist = landmarks[0];
+
+                  if (activeHoldRef.current?.gestureId === detectedGesture.id) {
+                    activeHoldRef.current.lastSeenTime = now;
+                    const elapsed = now - activeHoldRef.current.startTime;
+                    const progress = Math.min(1.0, elapsed / configuredHoldDuration);
+
+                    // Immediate visual feedback: circular progress ring around wrist
+                    const wx = wrist.x * canvas.width;
+                    const wy = wrist.y * canvas.height;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(wx, wy, 26, 0, 2 * Math.PI);
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.arc(wx, wy, 26, -Math.PI / 2, -Math.PI / 2 + progress * 2 * Math.PI);
+                    ctx.strokeStyle = progress >= 1.0 ? '#22c55e' : '#38bdf8';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 12px Inter, sans-serif';
+                    ctx.fillText(`${detectedGesture.name || 'Gesture'} (${Math.round(progress * 100)}%)`, wx + 34, wy + 5);
+                    ctx.restore();
+
+                    // State boundary: trigger once threshold bound is reached
+                    if (!activeHoldRef.current.triggered && elapsed >= configuredHoldDuration) {
+                      const lastTrigger = lastGestureTriggerTimeRef.current[detectedGesture.id] || 0;
+                      if (now - lastTrigger > 1500) {
+                        activeHoldRef.current.triggered = true;
+                        lastGestureTriggerTimeRef.current[detectedGesture.id] = now;
+                        console.log(`[VisionWakePanel] Gesture state transition: HOLDING -> TRIGGERED: ${detectedGesture.name} (${detectedGesture.action}) held for ${elapsed}ms`);
+                        window.dispatchEvent(new CustomEvent('vision:gesture-triggered', { detail: detectedGesture }));
+                        window.dispatchEvent(new CustomEvent('vision:gesture-state-change', { detail: { state: 'triggered', gesture: detectedGesture, elapsed } }));
+
+                        if (canvasRef.current) {
+                          canvasRef.current.style.boxShadow = '0 0 25px #22c55e';
+                          setTimeout(() => { if (canvasRef.current) canvasRef.current.style.boxShadow = 'none'; }, 800);
+                        }
+                      }
+                    } else if (!activeHoldRef.current.triggered) {
+                      window.dispatchEvent(new CustomEvent('vision:gesture-state-change', { detail: { state: 'holding', gesture: detectedGesture, progress, elapsed } }));
+                    }
+                  } else {
+                    // New gesture detected - start hold state if not on cooldown
+                    const lastTrigger = lastGestureTriggerTimeRef.current[detectedGesture.id] || 0;
+                    if (now - lastTrigger > 1500) {
+                      activeHoldRef.current = {
+                        gestureId: detectedGesture.id,
+                        gesture: detectedGesture,
+                        startTime: now,
+                        lastSeenTime: now,
+                        triggered: false,
+                        startWrist: { x: wrist.x, y: wrist.y }
+                      };
+                      console.log(`[VisionWakePanel] Gesture state transition: IDLE -> HOLDING: ${detectedGesture.name}`);
+                      window.dispatchEvent(new CustomEvent('vision:gesture-state-change', { detail: { state: 'holding', gesture: detectedGesture, progress: 0, elapsed: 0 } }));
+                    }
+                  }
+                } else if (activeHoldRef.current) {
+                  // Fallback Scenario: Recover gracefully when gesture is interrupted
+                  if (now - activeHoldRef.current.lastSeenTime > 200) {
+                    if (!activeHoldRef.current.triggered) {
+                      console.log(`[VisionWakePanel] Gesture state transition: HOLDING -> IDLE (Interrupted): ${activeHoldRef.current.gesture.name}`);
+                      window.dispatchEvent(new CustomEvent('vision:gesture-state-change', { detail: { state: 'interrupted', gesture: activeHoldRef.current.gesture } }));
+                    }
+                    activeHoldRef.current = null;
+                  }
+                }
+
                 // If in translation mode, buffer the gesture
                 if (isTranslatingRef.current && detectedGesture && !isOpenPalm) {
                   const label = detectedGesture.actionArg || detectedGesture.name || detectedGesture.label;
@@ -364,14 +443,9 @@ export function VisionWakePanel({ autoStart = false, testGestures = null }: { au
             
             ctx.restore();
 
-            if ((shouldWake || detectedGesture) && (Date.now() - lastWakeTimeRef.current > 3000)) {
+            if (shouldWake && (Date.now() - lastWakeTimeRef.current > 3000)) {
                lastWakeTimeRef.current = Date.now();
-               
-               if (detectedGesture) {
-                 window.dispatchEvent(new CustomEvent('vision:gesture-triggered', { detail: detectedGesture }));
-               } else {
-                 window.dispatchEvent(new CustomEvent('vision:wake-triggered'));
-               }
+               window.dispatchEvent(new CustomEvent('vision:wake-triggered'));
                
                if (canvasRef.current) {
                  canvasRef.current.style.boxShadow = '0 0 20px #4ade80';

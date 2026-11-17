@@ -3,6 +3,7 @@ import './App.css';
 
 import { FilesetResolver, HandLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
 import { Camera, ArrowLeft, Trash2, Mic, Activity, Radio, Sparkles } from 'lucide-react';
+import { extractFeaturesJS, predictRF } from './features';
 
 function App() {
   const [appMode, setAppMode] = useState<'studio' | 'translator'>('studio');
@@ -75,84 +76,6 @@ function App() {
     } catch (e) {
       console.error('Failed to load MediaPipe', e);
     }
-  };
-
-  const extractFeaturesJS = (timelineData: any[]) => {
-    const handStates = timelineData.filter(item => item.type === 'hand' && item.data).map(item => item.data);
-    const features: number[] = [];
-    if (handStates.length > 0) {
-        const avgLandmarks: any[] = [];
-        for (let i = 0; i < 21; i++) {
-            let sumX = 0, sumY = 0, sumZ = 0;
-            let count = 0;
-            for (const frame of handStates) {
-                if (frame && frame.length === 21) {
-                    sumX += frame[i].x; sumY += frame[i].y; sumZ += frame[i].z;
-                    count++;
-                }
-            }
-            if (count > 0) {
-                avgLandmarks.push({ x: sumX/count, y: sumY/count, z: sumZ/count });
-            } else {
-                avgLandmarks.push({ x: 0, y: 0, z: 0 });
-            }
-        }
-        
-        if (avgLandmarks.length === 21 && avgLandmarks.some(lm => lm.x !== 0)) {
-            const dists: number[] = [];
-            for (let i = 0; i < 21; i++) {
-                for (let j = i + 1; j < 21; j++) {
-                    const dx = avgLandmarks[i].x - avgLandmarks[j].x;
-                    const dy = avgLandmarks[i].y - avgLandmarks[j].y;
-                    const dz = avgLandmarks[i].z - avgLandmarks[j].z;
-                    dists.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
-                }
-            }
-            const maxDist = Math.max(...dists, 1.0);
-            for (const d of dists) {
-                features.push(d / maxDist);
-            }
-        } else {
-            for(let i=0; i<210; i++) features.push(0.0);
-        }
-    } else {
-        for(let i=0; i<210; i++) features.push(0.0);
-    }
-    return features;
-  };
-
-  const predictRF = (features: number[], model: any) => {
-    if (!model || !model.trees || features.every(f => f === 0.0)) return { prediction: 'none', confidence: 0.0 };
-    
-    const classVotes = new Array(model.classes.length).fill(0);
-    
-    for (const tree of model.trees) {
-        let node = 0;
-        // -1 indicates a leaf node in scikit-learn trees
-        while (tree.children_left[node] !== -1 && tree.children_left[node] !== tree.children_right[node]) {
-            if (features[tree.feature[node]] <= tree.threshold[node]) {
-                node = tree.children_left[node];
-            } else {
-                node = tree.children_right[node];
-            }
-        }
-        const values = tree.value[node][0];
-        let maxIdx = 0;
-        for (let i = 1; i < values.length; i++) {
-            if (values[i] > values[maxIdx]) maxIdx = i;
-        }
-        classVotes[maxIdx]++;
-    }
-    
-    let bestClassIdx = 0;
-    for (let i = 1; i < classVotes.length; i++) {
-        if (classVotes[i] > classVotes[bestClassIdx]) bestClassIdx = i;
-    }
-    
-    return {
-        prediction: model.classes[bestClassIdx],
-        confidence: classVotes[bestClassIdx] / model.trees.length
-    };
   };
 
   const startRecording = async () => {
@@ -302,7 +225,7 @@ function App() {
 
               const results = landmarkerRef.current.detectForVideo(videoRef.current, performance.now());
               
-              let handData = null;
+              let handData: any = null;
               if (results.landmarks && results.landmarks.length > 0) {
                 handData = results.landmarks[0]; // Array of 21 {x, y, z} coordinates
                 
