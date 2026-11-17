@@ -28,7 +28,11 @@ const keepModules = new Set([
   ...getExternalPkgs(),
   '@computer-use/mac-screen-capture-permissions',
 ]);
-const needSubDependencies = ['@computer-use/node-mac-permissions', 'sharp'];
+const needSubDependencies = [
+  ...Object.keys(pkg.dependencies),
+  '@computer-use/node-mac-permissions',
+  'sharp',
+];
 const ignorePattern = new RegExp(
   `^/node_modules/(?!${[...keepModules].join('|')})`,
 );
@@ -107,7 +111,9 @@ async function cleanSources(
         const moduleRoot = getModuleRoot(projectRoot, item);
 
         if (fs.existsSync(moduleRoot)) {
-          return cp(moduleRoot, path.join(buildPath, 'node_modules', item), {
+          const targetDir = path.join(buildPath, 'node_modules', item);
+          fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+          return cp(moduleRoot, targetDir, {
             recursive: true,
           });
         }
@@ -133,13 +139,15 @@ async function cleanSources(
       }
 
       if (fs.existsSync(subDependency.path)) {
-        return cp(
-          subDependency.path,
-          path.join(buildPath, 'node_modules', subDependency.name),
-          {
-            recursive: true,
-          },
+        const targetDir = path.join(
+          buildPath,
+          'node_modules',
+          subDependency.name,
         );
+        fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+        return cp(subDependency.path, targetDir, {
+          recursive: true,
+        });
       }
       return;
     }),

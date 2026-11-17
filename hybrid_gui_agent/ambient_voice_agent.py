@@ -143,6 +143,14 @@ class AmbientVoiceAgent:
         stop_event.wait()   # blocks until Ctrl+C
         self.stop()
 
+    def set_gesture_focus(self, active: bool) -> None:
+        """Forward gesture session focus state to the VAD gatekeeper."""
+        self._gatekeeper.set_gesture_focus(active)
+
+    def calibrate_vad(self, noise_floor: float = None, **kwargs) -> float:
+        """Calibrate VAD speech threshold against ambient noise."""
+        return self._gatekeeper.calibrate(noise_floor=noise_floor, **kwargs)
+
     # ------------------------------------------------------------------
     # VADGatekeeper callbacks
     # ------------------------------------------------------------------

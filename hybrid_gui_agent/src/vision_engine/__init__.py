@@ -14,9 +14,11 @@ except Exception:
     CoordinateMapper = None
 
 try:
-    from .homing_agent import VisualHomingAgent
+    from .homing_agent import VisualHomingAgent, HomingState, evaluate_coordinate_drift
 except Exception:
     VisualHomingAgent = None
+    HomingState = None
+    evaluate_coordinate_drift = None
 
 try:
     from .gesture_gatekeeper import GestureGatekeeper, EngagementState
@@ -47,6 +49,8 @@ try:
     from .gesture_engine import (
         calculate_gesture_specificity,
         rank_gestures_by_specificity,
+        detect_hand_gestures,
+        get_finger_states,
         validate_landmarks,
         validate_hold_threshold,
         matches_finger_states,
@@ -55,6 +59,8 @@ try:
 except Exception:
     calculate_gesture_specificity = None
     rank_gestures_by_specificity = None
+    detect_hand_gestures = None
+    get_finger_states = None
     validate_landmarks = None
     validate_hold_threshold = None
     matches_finger_states = None
@@ -65,17 +71,27 @@ __all__ = [
     "OpenVINOTagger",
     "CoordinateMapper",
     "VisualHomingAgent",
+    "HomingState",
+    "evaluate_coordinate_drift",
     "GestureGatekeeper",
     "EngagementState",
     "LocalVisionBrain",
     "Base64FrameThrottler",
-    "get_finger_states",
     "check_hand_bounds",
     "calculate_landmark_distance",
-    "detect_hand_gestures",
     "detect_face_gestures",
+    "MIN_HOLD_BOUND",
+    "MAX_HOLD_BOUND",
+    "DEFAULT_HOLD_TIME",
+    "DEFAULT_BLINK_THRESHOLD",
+    "MIN_BLINK_THRESHOLD",
+    "MAX_BLINK_THRESHOLD",
+    "get_validated_hold_time",
+    "validate_face_threshold_bounds",
     "calculate_gesture_specificity",
     "rank_gestures_by_specificity",
+    "detect_hand_gestures",
+    "get_finger_states",
     "validate_landmarks",
     "validate_hold_threshold",
     "matches_finger_states",
