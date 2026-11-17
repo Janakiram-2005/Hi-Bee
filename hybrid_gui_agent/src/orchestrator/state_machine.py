@@ -464,7 +464,7 @@ class AgentStateMachine:
             )
         except Exception as e:
             print(f"[PrecisionClick] Homing tracer errored: {e}. Degrading gracefully.")
-            final_x, final_y = initial_target_x, initial_y
+            final_x, final_y = initial_target_x, initial_target_y
         self.benchmark.end_phase("Closed-Loop Homing Tracer")
 
         # Inject verified high-precision click event

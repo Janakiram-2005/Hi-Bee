@@ -15,7 +15,11 @@ import ElectronStore from 'electron-store';
 
 import * as env from '@main/env';
 import { logger } from '@main/logger';
-import { createMainWindow, showMainWindow, hideMainWindow } from '@main/window/index';
+import {
+  createMainWindow,
+  showMainWindow,
+  hideMainWindow,
+} from '@main/window/index';
 import {
   createVoiceWindow,
   closeVoiceWindow,
@@ -44,7 +48,10 @@ import { registerSystemHandlers } from './ipcRoutes/system';
 import { checkBrowserAvailability } from './services/browserCheck';
 import { mongoService } from './services/mongoService';
 import { startStatusServer, stopStatusServer } from './services/statusServer';
-import { startExtensionServer, stopExtensionServer } from './services/extensionServer';
+import {
+  startExtensionServer,
+  stopExtensionServer,
+} from './services/extensionServer';
 
 const { isProd } = env;
 
@@ -57,7 +64,10 @@ app.commandLine.appendSwitch('force-renderer-accessibility');
 // at the browser engine level — no permission dialog, no service check.
 app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
 // Enable Web Speech API explicitly (some Electron builds disable it).
-app.commandLine.appendSwitch('enable-features', 'WebSpeechAPI,SpeechSynthesis,AudioCaptureAllowed');
+app.commandLine.appendSwitch(
+  'enable-features',
+  'WebSpeechAPI,SpeechSynthesis,AudioCaptureAllowed',
+);
 // Remove the requirement for a user gesture to start audio playback / capture.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // Disable WebRTC mDNS that can interfere with audio capture routing.
@@ -65,7 +75,6 @@ app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 // Allow microphone capture without HTTPS — needed for file:// and localhost origins.
 app.commandLine.appendSwitch('allow-insecure-localhost');
 app.commandLine.appendSwitch('ignore-certificate-errors');
-
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (squirrelStartup) {
@@ -92,15 +101,18 @@ const loadDevDebugTools = async () => {
       const installExtensionDefault = module.default;
       const REACT_DEVELOPER_TOOLS = module.REACT_DEVELOPER_TOOLS;
       // @ts-ignore
-      const installExtension = typeof installExtensionDefault === 'function'
-        ? installExtensionDefault
-        : (installExtensionDefault as any)?.default;
-      
+      const installExtension =
+        typeof installExtensionDefault === 'function'
+          ? installExtensionDefault
+          : (installExtensionDefault as any)?.default;
+
       if (typeof installExtension !== 'function') {
-        logger.warn('[main] DevTools installExtension is not a function, skipping.');
+        logger.warn(
+          '[main] DevTools installExtension is not a function, skipping.',
+        );
         return;
       }
-      
+
       const extensions = [installExtension(REACT_DEVELOPER_TOOLS)];
 
       return Promise.all(extensions)
@@ -139,34 +151,49 @@ const initializeApp = async () => {
   await createTray();
 
   // Connect MongoDB (non-blocking — app works even if this fails)
-  mongoService.connect().catch((err) => logger.warn('[main] MongoDB connect failed:', err));
+  mongoService
+    .connect()
+    .catch((err) => logger.warn('[main] MongoDB connect failed:', err));
 
   // Start local status server for Python assistant events
   startStatusServer();
   startExtensionServer();
 
   // Helper to register global shortcuts with fallback and error logging
-  const registerWithFallback = (primary: string, fallback: string, callback: () => void) => {
+  const registerWithFallback = (
+    primary: string,
+    fallback: string,
+    callback: () => void,
+  ) => {
     try {
       const success = globalShortcut.register(primary, callback);
       if (success) {
         logger.info(`[main] Registered global shortcut: ${primary}`);
         return true;
       } else {
-        logger.warn(`Shortcut [${primary}] failed to register. It may be intercepted by the OS.`);
-        
+        logger.warn(
+          `Shortcut [${primary}] failed to register. It may be intercepted by the OS.`,
+        );
+
         // Attempt fallback registration
         const fallbackSuccess = globalShortcut.register(fallback, callback);
         if (fallbackSuccess) {
-          logger.info(`[main] Registered fallback global shortcut: ${fallback}`);
+          logger.info(
+            `[main] Registered fallback global shortcut: ${fallback}`,
+          );
           return true;
         } else {
-          logger.warn(`Shortcut [${fallback}] failed to register. It may be intercepted by the OS.`);
+          logger.warn(
+            `Shortcut [${fallback}] failed to register. It may be intercepted by the OS.`,
+          );
           return false;
         }
       }
     } catch (err) {
-      logger.warn(`[main] Could not register global shortcut [${primary}] or [${fallback}]:`, err);
+      logger.warn(
+        `[main] Could not register global shortcut [${primary}] or [${fallback}]:`,
+        err,
+      );
       return false;
     }
   };
@@ -181,41 +208,59 @@ const initializeApp = async () => {
       if (!currentSettings.voiceEnabled) {
         SettingStore.set('voiceEnabled', true);
       }
-      
+
       let win = getVoiceWindow();
       if (!win || win.isDestroyed()) {
         win = createVoiceWindow();
       }
-      
+
       if (win && !win.isDestroyed()) {
         win.showInactive();
       }
-      
+
       windowManager.broadcast('voice:toggle-listen', null);
     }
   };
 
   // Register Voice toggles with fallbacks
-  registerWithFallback('CommandOrControl+Shift+V', 'CommandOrControl+Alt+V', onToggleVoice);
-  registerWithFallback('CommandOrControl+Shift+Space', 'CommandOrControl+Alt+Space', onToggleVoice);
+  registerWithFallback(
+    'CommandOrControl+Shift+V',
+    'CommandOrControl+Alt+V',
+    onToggleVoice,
+  );
+  registerWithFallback(
+    'CommandOrControl+Shift+Space',
+    'CommandOrControl+Alt+Space',
+    onToggleVoice,
+  );
 
   // Register Toggle Agent chat window with fallback (Ctrl+Shift+H / Ctrl+Alt+H)
-  registerWithFallback('CommandOrControl+Shift+H', 'CommandOrControl+Alt+H', () => {
-    logger.info('[main] Toggling Hi-Bee Agent window');
-    toggleHiBeeAgentWindow();
-  });
+  registerWithFallback(
+    'CommandOrControl+Shift+H',
+    'CommandOrControl+Alt+H',
+    () => {
+      logger.info('[main] Toggling Hi-Bee Agent window');
+      toggleHiBeeAgentWindow();
+    },
+  );
 
   // Register Stop Action command with fallback (Ctrl+Shift+S / Ctrl+Alt+S)
-  registerWithFallback('CommandOrControl+Shift+S', 'CommandOrControl+Alt+S', () => {
-    logger.info('[main] Global shortcut: stopping active agent run');
-    stopActiveAgentRun();
-  });
+  registerWithFallback(
+    'CommandOrControl+Shift+S',
+    'CommandOrControl+Alt+S',
+    () => {
+      logger.info('[main] Global shortcut: stopping active agent run');
+      stopActiveAgentRun();
+    },
+  );
 
   // Send app launched event
   await UTIOService.getInstance().appLaunched();
 
-  // Force/sync startup settings to ensure voice agent always activates on project run
-  SettingStore.set('voiceEnabled', true);
+  if (!env.isE2eTest) {
+    // Force/sync startup settings to ensure voice agent always activates on project run
+    SettingStore.set('voiceEnabled', true);
+  }
 
   const { ensureVlmDefaults } = await import('@main/utils/vlmProvider');
   const syncedSettings = ensureVlmDefaults(SettingStore.getStore());
@@ -233,7 +278,7 @@ const initializeApp = async () => {
 
   logger.info('createMainWindow');
   let mainWindow = createMainWindow({
-    showInBackground: settings.voiceEnabled,
+    showInBackground: env.isE2eTest ? false : settings.voiceEnabled,
   });
 
   session.defaultSession.setDisplayMediaRequestHandler(
@@ -252,25 +297,35 @@ const initializeApp = async () => {
 
   const grantedMediaPermissions = new Set<string>();
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    const mediaPerms = ['media', 'audio', 'microphone', 'audioCapture', 'mediaKeySystem'];
-    if (mediaPerms.includes(permission as string)) {
-      if (!grantedMediaPermissions.has(permission)) {
-        grantedMediaPermissions.add(permission);
-        logger.info(`[main] Permission granted: ${permission}`);
+  session.defaultSession.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      const mediaPerms = [
+        'media',
+        'audio',
+        'microphone',
+        'audioCapture',
+        'mediaKeySystem',
+      ];
+      if (mediaPerms.includes(permission as string)) {
+        if (!grantedMediaPermissions.has(permission)) {
+          grantedMediaPermissions.add(permission);
+          logger.info(`[main] Permission granted: ${permission}`);
+        }
+        callback(true);
+      } else {
+        // Grant most other permissions (notifications, geolocation etc) too
+        logger.info(`[main] Permission auto-granted: ${permission}`);
+        callback(true);
       }
-      callback(true);
-    } else {
-      // Grant most other permissions (notifications, geolocation etc) too
-      logger.info(`[main] Permission auto-granted: ${permission}`);
-      callback(true);
-    }
-  });
+    },
+  );
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, _permission) => {
-    // Always return true — the voice window needs unconditional media access
-    return true;
-  });
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, _permission) => {
+      // Always return true — the voice window needs unconditional media access
+      return true;
+    },
+  );
 
   // Electron 20+: auto-grant device access for microphone/camera so getUserMedia
   // never throws NotAllowedError from a transparent/background window.
@@ -341,7 +396,7 @@ const initializeApp = async () => {
   }
 
   // Create voice window on startup if enabled
-  if (settings.voiceEnabled) {
+  if (settings.voiceEnabled && !env.isE2eTest) {
     if (settings.googleApiSource === 'agent_builder') {
       createHiBeeAgentWindow();
     } else {
@@ -468,7 +523,9 @@ const registerIPCHandlers = (
   });
 
   ipcMain.handle('voice:hide-main-window-if-background', () => {
-    logger.info('[main] Hiding main window after microphone permission request');
+    logger.info(
+      '[main] Hiding main window after microphone permission request',
+    );
     const settings = SettingStore.getStore();
     if (settings.voiceEnabled) {
       hideMainWindow();
@@ -484,9 +541,9 @@ const registerIPCHandlers = (
   });
 
   registerSettingsHandlers();
-  
+
   registerSystemHandlers();
-  
+
   // register ipc services routes
   registerIpcMain(ipcRoutes);
 

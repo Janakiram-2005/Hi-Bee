@@ -9,7 +9,7 @@ export const extractFeaturesJS = (timelineData: any[]): number[] => {
     .filter((item) => item && item.type === 'hand' && item.data)
     .map((item) => item.data);
   const validFrames = handStates.filter(
-    (frame: any) => Array.isArray(frame) && frame.length === 21
+    (frame: any) => Array.isArray(frame) && frame.length === 21,
   );
 
   const TOTAL_FEATURES = 417;
@@ -24,13 +24,19 @@ export const extractFeaturesJS = (timelineData: any[]): number[] => {
   const p2End = Math.max(p1End + 1, Math.floor((2 * numFrames) / 3));
 
   const phaseStart = validFrames.slice(0, p1End);
-  const phaseMid = validFrames.slice(p1End, p2End).length > 0 ? validFrames.slice(p1End, p2End) : phaseStart;
-  const phaseEnd = validFrames.slice(p2End).length > 0 ? validFrames.slice(p2End) : phaseMid;
+  const phaseMid =
+    validFrames.slice(p1End, p2End).length > 0
+      ? validFrames.slice(p1End, p2End)
+      : phaseStart;
+  const phaseEnd =
+    validFrames.slice(p2End).length > 0 ? validFrames.slice(p2End) : phaseMid;
 
   const avgLandmarksPhase = (frames: any[]) => {
     const avg: { x: number; y: number; z: number }[] = [];
     for (let i = 0; i < 21; i++) {
-      let sumX = 0, sumY = 0, sumZ = 0;
+      let sumX = 0,
+        sumY = 0,
+        sumZ = 0;
       for (const f of frames) {
         sumX += f[i].x;
         sumY += f[i].y;
@@ -39,7 +45,7 @@ export const extractFeaturesJS = (timelineData: any[]): number[] => {
       avg.push({
         x: frames.length > 0 ? sumX / frames.length : 0.0,
         y: frames.length > 0 ? sumY / frames.length : 0.0,
-        z: frames.length > 0 ? sumZ / frames.length : 0.0
+        z: frames.length > 0 ? sumZ / frames.length : 0.0,
       });
     }
     return avg;
@@ -103,8 +109,8 @@ export const extractFeaturesJS = (timelineData: any[]): number[] => {
       const pCurr = validFrames[fIdx][kidx];
       plen += Math.sqrt(
         Math.pow(pCurr.x - pPrev.x, 2) +
-        Math.pow(pCurr.y - pPrev.y, 2) +
-        Math.pow(pCurr.z - pPrev.z, 2)
+          Math.pow(pCurr.y - pPrev.y, 2) +
+          Math.pow(pCurr.z - pPrev.z, 2),
       );
     }
     pathLengths.push(plen);
@@ -146,7 +152,10 @@ export const extractFeaturesJS = (timelineData: any[]): number[] => {
   return features;
 };
 
-export const predictRF = (features: number[], model: any): { prediction: string; confidence: number } => {
+export const predictRF = (
+  features: number[],
+  model: any,
+): { prediction: string; confidence: number } => {
   if (!model || !model.trees || features.every((f) => f === 0.0)) {
     return { prediction: 'none', confidence: 0.0 };
   }
@@ -155,7 +164,10 @@ export const predictRF = (features: number[], model: any): { prediction: string;
 
   for (const tree of model.trees) {
     let node = 0;
-    while (tree.children_left[node] !== -1 && tree.children_left[node] !== tree.children_right[node]) {
+    while (
+      tree.children_left[node] !== -1 &&
+      tree.children_left[node] !== tree.children_right[node]
+    ) {
       if (features[tree.feature[node]] <= tree.threshold[node]) {
         node = tree.children_left[node];
       } else {
@@ -177,6 +189,6 @@ export const predictRF = (features: number[], model: any): { prediction: string;
 
   return {
     prediction: model.classes[bestClassIdx],
-    confidence: classVotes[bestClassIdx] / model.trees.length
+    confidence: classVotes[bestClassIdx] / model.trees.length,
   };
 };

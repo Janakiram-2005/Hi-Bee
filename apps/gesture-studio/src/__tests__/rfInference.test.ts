@@ -31,7 +31,7 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
         children_right: [-1],
         feature: [-2],
         threshold: [-2.0],
-        value: [[[0.30, 0.25, 0.25, 0.20]]],
+        value: [[[0.3, 0.25, 0.25, 0.2]]],
       });
     }
     for (let i = 0; i < 4; i++) {
@@ -40,14 +40,14 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
         children_right: [-1],
         feature: [-2],
         threshold: [-2.0],
-        value: [[[0.10, 0.35, 0.30, 0.25]]],
+        value: [[[0.1, 0.35, 0.3, 0.25]]],
       });
     }
 
     const model: RFModel = { classes, trees };
     const dummyFeatures = new Array(210).fill(0.5);
 
-    const result = predictRF(dummyFeatures, model, 0.50);
+    const result = predictRF(dummyFeatures, model, 0.5);
 
     // Continuous aggregated confidence should be 0.29 (29%), NOT 0.60 (60%)
     expect(result.confidence).toBeCloseTo(0.29, 2);
@@ -76,7 +76,7 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
     const model: RFModel = { classes, trees };
     const features = new Array(210).fill(0.4);
 
-    const result = predictRF(features, model, 0.50);
+    const result = predictRF(features, model, 0.5);
 
     expect(result.prediction).toBe('love');
     expect(result.confidence).toBeCloseTo(0.85, 2);
@@ -101,9 +101,9 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
     const features = new Array(210).fill(0.2);
 
     it('recognizes gesture when confidence exactly meets the 0.50 threshold', () => {
-      const model = createModelWithProb(0.50, 0.50);
-      const result = predictRF(features, model, 0.50);
-      expect(result.confidence).toBeCloseTo(0.50, 4);
+      const model = createModelWithProb(0.5, 0.5);
+      const result = predictRF(features, model, 0.5);
+      expect(result.confidence).toBeCloseTo(0.5, 4);
       expect(result.isRecognized).toBe(true);
     });
 
@@ -117,9 +117,9 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
     it('respects custom user-configured thresholds', () => {
       const model = createModelWithProb(0.75, 0.25);
       // At threshold 0.70, 0.75 is recognized
-      expect(predictRF(features, model, 0.70).isRecognized).toBe(true);
+      expect(predictRF(features, model, 0.7).isRecognized).toBe(true);
       // At threshold 0.80, 0.75 is rejected
-      expect(predictRF(features, model, 0.80).isRecognized).toBe(false);
+      expect(predictRF(features, model, 0.8).isRecognized).toBe(false);
     });
 
     it('validates and clamps threshold bounds properly', () => {
@@ -144,23 +144,19 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
             children_right: [2, -1, -1],
             feature: [0, -2, -2],
             threshold: [0.5, -2.0, -2.0],
-            value: [
-              [[0.5, 0.5]],
-              [[0.9, 0.1]],
-              [[0.1, 0.9]],
-            ],
+            value: [[[0.5, 0.5]], [[0.9, 0.1]], [[0.1, 0.9]]],
           },
         ],
       };
 
       const featuresLeft = [0.3, ...new Array(209).fill(0.1)];
-      const resultLeft = predictRF(featuresLeft, model, 0.50);
+      const resultLeft = predictRF(featuresLeft, model, 0.5);
       expect(resultLeft.prediction).toBe('left_pose');
       expect(resultLeft.confidence).toBeCloseTo(0.9, 2);
       expect(resultLeft.isRecognized).toBe(true);
 
       const featuresRight = [0.8, ...new Array(209).fill(0.1)];
-      const resultRight = predictRF(featuresRight, model, 0.50);
+      const resultRight = predictRF(featuresRight, model, 0.5);
       expect(resultRight.prediction).toBe('right_pose');
       expect(resultRight.confidence).toBeCloseTo(0.9, 2);
       expect(resultRight.isRecognized).toBe(true);
@@ -191,16 +187,27 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
 
     it('returns none with confidence 0.0 when features array is empty or invalid', () => {
       expect(predictRF([], dummyModel).confidence).toBe(0.0);
-      expect(predictRF(null as unknown as number[], dummyModel).confidence).toBe(0.0);
-      expect(predictRF(undefined as unknown as number[], dummyModel).confidence).toBe(0.0);
+      expect(
+        predictRF(null as unknown as number[], dummyModel).confidence,
+      ).toBe(0.0);
+      expect(
+        predictRF(undefined as unknown as number[], dummyModel).confidence,
+      ).toBe(0.0);
     });
 
     it('returns none with confidence 0.0 when model is null or missing trees', () => {
       const features = new Array(210).fill(0.5);
       expect(predictRF(features, null).confidence).toBe(0.0);
       expect(predictRF(features, {}).confidence).toBe(0.0);
-      expect(predictRF(features, { classes: ['a'], trees: [] }).confidence).toBe(0.0);
-      expect(predictRF(features, { classes: [], trees: [{}] as unknown as RFModel['trees'] }).confidence).toBe(0.0);
+      expect(
+        predictRF(features, { classes: ['a'], trees: [] }).confidence,
+      ).toBe(0.0);
+      expect(
+        predictRF(features, {
+          classes: [],
+          trees: [{}] as unknown as RFModel['trees'],
+        }).confidence,
+      ).toBe(0.0);
     });
 
     it('handles degenerate tree leaves with zero total sum without NaN', () => {
@@ -217,7 +224,7 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
         ],
       };
       const features = new Array(210).fill(0.5);
-      const res = predictRF(features, modelWithEmptyLeaf, 0.50);
+      const res = predictRF(features, modelWithEmptyLeaf, 0.5);
       expect(Number.isFinite(res.confidence)).toBe(true);
       expect(res.confidence).toBeCloseTo(0.5, 2);
     });
@@ -225,7 +232,10 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
 
   describe('Real exported custom_word_model.json inference & performance', () => {
     it('successfully loads and predicts using the real exported model within latency bounds', () => {
-      const modelPath = path.resolve(__dirname, '../../../ui-tars/dataset/custom_word_model.json');
+      const modelPath = path.resolve(
+        __dirname,
+        '../../../ui-tars/dataset/custom_word_model.json',
+      );
       if (fs.existsSync(modelPath)) {
         const raw = fs.readFileSync(modelPath, 'utf8');
         const realModel = JSON.parse(raw);
@@ -239,7 +249,7 @@ describe('Random Forest Soft Voting & Gesture Probability Aggregation', () => {
         // Run 1000 iterations to verify 60 FPS real-time processing constraints (< 16.6ms per frame)
         const iterations = 1000;
         for (let i = 0; i < iterations; i++) {
-          predictRF(dummyFeatures, realModel, 0.50);
+          predictRF(dummyFeatures, realModel, 0.5);
         }
         const totalDuration = performance.now() - startTime;
         const avgPerInference = totalDuration / iterations;

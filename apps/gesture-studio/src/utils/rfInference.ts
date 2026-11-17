@@ -21,8 +21,15 @@ export interface RFModel {
 /**
  * Validates threshold bounds. Ensures threshold is a valid finite number in [0.0, 1.0].
  */
-export function validateThreshold(threshold?: number, defaultThreshold = 0.50): number {
-  if (threshold === undefined || threshold === null || !Number.isFinite(threshold)) {
+export function validateThreshold(
+  threshold?: number,
+  defaultThreshold = 0.5,
+): number {
+  if (
+    threshold === undefined ||
+    threshold === null ||
+    !Number.isFinite(threshold)
+  ) {
     return defaultThreshold;
   }
   return Math.min(1.0, Math.max(0.0, threshold));
@@ -42,7 +49,11 @@ export function validateFeatures(features?: number[]): boolean {
  * Extracts 210 scale-invariant pairwise landmark distance features from timeline hand data.
  */
 export function extractFeaturesJS(
-  timelineData: Array<{ type?: string; data?: Array<{ x?: number; y?: number; z?: number }>; [key: string]: unknown }>,
+  timelineData: Array<{
+    type?: string;
+    data?: Array<{ x?: number; y?: number; z?: number }>;
+    [key: string]: unknown;
+  }>,
 ): number[] {
   if (!Array.isArray(timelineData) || timelineData.length === 0) {
     return new Array(210).fill(0.0);
@@ -77,7 +88,10 @@ export function extractFeaturesJS(
     }
   }
 
-  if (avgLandmarks.length === 21 && avgLandmarks.some((lm) => lm.x !== 0 || lm.y !== 0 || lm.z !== 0)) {
+  if (
+    avgLandmarks.length === 21 &&
+    avgLandmarks.some((lm) => lm.x !== 0 || lm.y !== 0 || lm.z !== 0)
+  ) {
     const dists: number[] = [];
     for (let i = 0; i < 21; i++) {
       for (let j = i + 1; j < 21; j++) {
@@ -104,9 +118,9 @@ export function extractFeaturesJS(
 export function predictRF(
   features: number[],
   model: RFModel | Record<string, unknown> | null | undefined,
-  threshold: number = 0.50,
+  threshold: number = 0.5,
 ): RFInferenceResult {
-  const defaultThreshold = validateThreshold(threshold, 0.50);
+  const defaultThreshold = validateThreshold(threshold, 0.5);
 
   if (
     !model ||

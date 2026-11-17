@@ -188,8 +188,8 @@ export function VisionWakePanel({
     }),
   );
 
-  const smootherRef = useRef<DprGestureStateSmoother>(
-    new DprGestureStateSmoother(2, 3),
+  const smootherRef = useRef<GestureStateSmoother>(
+    new GestureStateSmoother(2, 3),
   );
 
   useEffect(() => {
@@ -552,8 +552,8 @@ export function VisionWakePanel({
                     const configuredHoldDuration =
                       detectedGesture.holdDuration || 800; // ms
                     const wrist = previewCoordinates[0]?.canvas || {
-                      x: landmarks[0].x * canvas.width,
-                      y: landmarks[0].y * canvas.height,
+                      x: correctedLandmarks[0].x * canvas.width,
+                      y: correctedLandmarks[0].y * canvas.height,
                     };
 
                     const currentHold = activeHoldRef.current;
@@ -716,19 +716,44 @@ export function VisionWakePanel({
                       (label !== lastAddedGestureRef.current.name ||
                         Date.now() - lastAddedGestureRef.current.time > 1500)
                     ) {
-                      translationBufferRef.current.push(label);
-                      lastAddedGestureRef.current = {
-                        name: label,
-                        time: Date.now(),
-                      };
+                      if (
+                        translationBufferRef.current.length <
+                        MAX_TRANSLATION_BUFFER_SIZE
+                      ) {
+                        translationBufferRef.current.push(label);
+                        lastAddedGestureRef.current = {
+                          name: label,
+                          time: Date.now(),
+                        };
+                        console.log(
+                          '[VisionWakePanel] Gesture buffered:',
+                          label,
+                          'Buffer:',
+                          translationBufferRef.current,
+                        );
 
-                      // Brief flash to indicate word recorded
-                      if (canvasRef.current) {
-                        canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
-                        setTimeout(() => {
-                          if (canvasRef.current)
-                            canvasRef.current.style.boxShadow = 'none';
-                        }, 300);
+                        // Brief flash to indicate word recorded
+                        if (canvasRef.current) {
+                          canvasRef.current.style.boxShadow =
+                            '0 0 10px #60a5fa';
+                          setTimeout(() => {
+                            if (canvasRef.current)
+                              canvasRef.current.style.boxShadow = 'none';
+                          }, 300);
+                        }
+
+                        // Reset idle flush timer for inactivity timeout
+                        if (idleFlushTimerRef.current) {
+                          clearTimeout(idleFlushTimerRef.current);
+                        }
+                        idleFlushTimerRef.current = setTimeout(() => {
+                          flushTranslationBuffer('inactivity');
+                        }, IDLE_FLUSH_TIMEOUT_MS);
+                      } else {
+                        console.warn(
+                          '[VisionWakePanel] Translation buffer reached maximum bounds, auto-flushing.',
+                        );
+                        flushTranslationBuffer('max_buffer');
                       }
                     }
                   }
@@ -744,44 +769,7 @@ export function VisionWakePanel({
                       (thumbTip.x - indexTip.x) * cropMetrics.targetAspectRatio,
                     ) > 0.1
                   ) {
-                    if (
-                      translationBufferRef.current.length <
-                      MAX_TRANSLATION_BUFFER_SIZE
-                    ) {
-                      translationBufferRef.current.push(label);
-                      lastAddedGestureRef.current = {
-                        name: label,
-                        time: Date.now(),
-                      };
-                      console.log(
-                        '[VisionWakePanel] Gesture buffered:',
-                        label,
-                        'Buffer:',
-                        translationBufferRef.current,
-                      );
-
-                      // Brief flash to indicate word recorded
-                      if (canvasRef.current) {
-                        canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
-                        setTimeout(() => {
-                          if (canvasRef.current)
-                            canvasRef.current.style.boxShadow = 'none';
-                        }, 300);
-                      }
-
-                      // Reset idle flush timer for inactivity timeout
-                      if (idleFlushTimerRef.current) {
-                        clearTimeout(idleFlushTimerRef.current);
-                      }
-                      idleFlushTimerRef.current = setTimeout(() => {
-                        flushTranslationBuffer('inactivity');
-                      }, IDLE_FLUSH_TIMEOUT_MS);
-                    } else {
-                      console.warn(
-                        '[VisionWakePanel] Translation buffer reached maximum bounds, auto-flushing.',
-                      );
-                      flushTranslationBuffer('max_buffer');
-                    }
+                    shouldWake = true;
                   }
                 }
               }
