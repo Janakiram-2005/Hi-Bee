@@ -3,6 +3,9 @@ import './App.css';
 
 import { FilesetResolver, HandLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
 import { Camera, ArrowLeft, Trash2, Mic, Activity, Radio, Sparkles } from 'lucide-react';
+import { predictRF, extractFeaturesJS, validateThreshold } from './utils/rfInference';
+
+export { predictRF, extractFeaturesJS, validateThreshold };
 
 function App() {
   const [appMode, setAppMode] = useState<'studio' | 'translator'>('studio');
@@ -19,6 +22,8 @@ function App() {
   const [translatorActive, setTranslatorActive] = useState(false);
   const [translationLog, setTranslationLog] = useState<{ time: string, text: string }[]>([]);
   const [currentStatus, setCurrentStatus] = useState('Not Recognized');
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.50);
+  const [lastConfidence, setLastConfidence] = useState(0.0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,83 +82,7 @@ function App() {
     }
   };
 
-  const extractFeaturesJS = (timelineData: any[]) => {
-    const handStates = timelineData.filter(item => item.type === 'hand' && item.data).map(item => item.data);
-    const features: number[] = [];
-    if (handStates.length > 0) {
-        const avgLandmarks: any[] = [];
-        for (let i = 0; i < 21; i++) {
-            let sumX = 0, sumY = 0, sumZ = 0;
-            let count = 0;
-            for (const frame of handStates) {
-                if (frame && frame.length === 21) {
-                    sumX += frame[i].x; sumY += frame[i].y; sumZ += frame[i].z;
-                    count++;
-                }
-            }
-            if (count > 0) {
-                avgLandmarks.push({ x: sumX/count, y: sumY/count, z: sumZ/count });
-            } else {
-                avgLandmarks.push({ x: 0, y: 0, z: 0 });
-            }
-        }
-        
-        if (avgLandmarks.length === 21 && avgLandmarks.some(lm => lm.x !== 0)) {
-            const dists: number[] = [];
-            for (let i = 0; i < 21; i++) {
-                for (let j = i + 1; j < 21; j++) {
-                    const dx = avgLandmarks[i].x - avgLandmarks[j].x;
-                    const dy = avgLandmarks[i].y - avgLandmarks[j].y;
-                    const dz = avgLandmarks[i].z - avgLandmarks[j].z;
-                    dists.push(Math.sqrt(dx*dx + dy*dy + dz*dz));
-                }
-            }
-            const maxDist = Math.max(...dists, 1.0);
-            for (const d of dists) {
-                features.push(d / maxDist);
-            }
-        } else {
-            for(let i=0; i<210; i++) features.push(0.0);
-        }
-    } else {
-        for(let i=0; i<210; i++) features.push(0.0);
-    }
-    return features;
-  };
 
-  const predictRF = (features: number[], model: any) => {
-    if (!model || !model.trees || features.every(f => f === 0.0)) return { prediction: 'none', confidence: 0.0 };
-    
-    const classVotes = new Array(model.classes.length).fill(0);
-    
-    for (const tree of model.trees) {
-        let node = 0;
-        // -1 indicates a leaf node in scikit-learn trees
-        while (tree.children_left[node] !== -1 && tree.children_left[node] !== tree.children_right[node]) {
-            if (features[tree.feature[node]] <= tree.threshold[node]) {
-                node = tree.children_left[node];
-            } else {
-                node = tree.children_right[node];
-            }
-        }
-        const values = tree.value[node][0];
-        let maxIdx = 0;
-        for (let i = 1; i < values.length; i++) {
-            if (values[i] > values[maxIdx]) maxIdx = i;
-        }
-        classVotes[maxIdx]++;
-    }
-    
-    let bestClassIdx = 0;
-    for (let i = 1; i < classVotes.length; i++) {
-        if (classVotes[i] > classVotes[bestClassIdx]) bestClassIdx = i;
-    }
-    
-    return {
-        prediction: model.classes[bestClassIdx],
-        confidence: classVotes[bestClassIdx] / model.trees.length
-    };
-  };
 
   const startRecording = async () => {
     if (!label.trim()) {
@@ -302,12 +231,12 @@ function App() {
 
               const results = landmarkerRef.current.detectForVideo(videoRef.current, performance.now());
               
-              let handData = null;
+              let handData: any = null;
               if (results.landmarks && results.landmarks.length > 0) {
                 handData = results.landmarks[0]; // Array of 21 {x, y, z} coordinates
                 
                 // Palm Detection Heuristic
-                const isFingerOpen = (tipIdx: number, pipIdx: number) => handData[tipIdx].y < handData[pipIdx].y;
+                const isFingerOpen = (tipIdx: number, pipIdx: number) => Boolean(handData && handData[tipIdx] && handData[pipIdx] && handData[tipIdx].y < handData[pipIdx].y);
                 // If the 4 main fingers are pointed straight up, consider it a Palm
                 const isPalm = isFingerOpen(8, 6) && isFingerOpen(12, 10) && isFingerOpen(16, 14) && isFingerOpen(20, 18);
                 
@@ -360,21 +289,27 @@ function App() {
           
           try {
             const features = extractFeaturesJS(rollingTimelineRef.current);
-            const data = predictRF(features, wordModelJson);
+            const data = predictRF(features, wordModelJson, confidenceThreshold);
+            setLastConfidence(data.confidence);
             
-            if (data.confidence >= 0.50) {
+            if (data.isRecognized) {
               const label = String(data.prediction);
               setCurrentStatus(`Recognized: ${label} (${(data.confidence * 100).toFixed(0)}%)`);
               
               if (label !== 'None' && label !== 'none') {
                 if (label !== lastRecognizedRef.current.label || Date.now() - lastRecognizedRef.current.time > 2000) {
+                  console.log(`[Translator] Gesture recognized: ${label} (confidence: ${(data.confidence * 100).toFixed(1)}%, threshold: ${(confidenceThreshold * 100).toFixed(0)}%)`);
                   setTranslationLog(prev => [...prev, { time: new Date().toLocaleTimeString(), text: label }]);
                   sentenceWordsRef.current.push(label);
                   lastRecognizedRef.current = { label, time: Date.now() };
                 }
               }
             } else {
-              setCurrentStatus('Not Recognized');
+              setCurrentStatus(
+                data.confidence > 0
+                  ? `Analyzing... (max: ${(data.confidence * 100).toFixed(0)}% < ${(confidenceThreshold * 100).toFixed(0)}%)`
+                  : 'Not Recognized'
+              );
             }
           } catch (e) {
             console.error("Inference interval error", e);
@@ -447,22 +382,54 @@ function App() {
             <ArrowLeft size={18} /> Exit HUD
           </button>
 
-          {/* Dynamic Status Island */}
-          <div style={{ 
-            display: 'flex', alignItems: 'center', gap: '12px',
-            background: currentStatus.startsWith('Recognized') ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.6)',
-            backdropFilter: 'blur(20px)',
-            border: `1px solid ${currentStatus.startsWith('Recognized') ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
-            boxShadow: currentStatus.startsWith('Recognized') ? '0 0 30px rgba(16, 185, 129, 0.2)' : '0 10px 30px rgba(0,0,0,0.5)',
-            padding: '12px 30px',
-            borderRadius: '40px',
-            color: currentStatus.startsWith('Recognized') ? '#a7f3d0' : 'white',
-            fontWeight: 700,
-            fontSize: '18px',
-            transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-          }}>
-            {currentStatus.startsWith('Recognized') ? <Activity size={20} color="#34d399" /> : <Radio size={20} color={translatorActive ? "#60a5fa" : "#ef4444"} />}
-            {currentStatus === 'Not Recognized' ? (translatorActive ? 'Analyzing Gestures...' : 'System Standby') : currentStatus}
+          {/* Dynamic Status Island & Confidence/Threshold Visual Indicators */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', pointerEvents: 'auto' }}>
+            <div style={{ 
+              display: 'flex', alignItems: 'center', gap: '12px',
+              background: currentStatus.startsWith('Recognized') ? 'rgba(16, 185, 129, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+              backdropFilter: 'blur(20px)',
+              border: `1px solid ${currentStatus.startsWith('Recognized') ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
+              boxShadow: currentStatus.startsWith('Recognized') ? '0 0 30px rgba(16, 185, 129, 0.2)' : '0 10px 30px rgba(0,0,0,0.5)',
+              padding: '12px 30px',
+              borderRadius: '40px',
+              color: currentStatus.startsWith('Recognized') ? '#a7f3d0' : 'white',
+              fontWeight: 700,
+              fontSize: '18px',
+              transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+            }}>
+              {currentStatus.startsWith('Recognized') ? <Activity size={20} color="#34d399" /> : <Radio size={20} color={translatorActive ? "#60a5fa" : "#ef4444"} />}
+              {currentStatus === 'Not Recognized' ? (translatorActive ? 'Analyzing Gestures...' : 'System Standby') : currentStatus}
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              background: 'rgba(15, 23, 42, 0.6)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              padding: '10px 18px',
+              borderRadius: '20px',
+              fontSize: '13px',
+              color: '#cbd5e1'
+            }}>
+              <span>Threshold: <strong>{(confidenceThreshold * 100).toFixed(0)}%</strong></span>
+              <input
+                type="range"
+                min="0.10"
+                max="0.95"
+                step="0.05"
+                value={confidenceThreshold}
+                onChange={(e) => setConfidenceThreshold(validateThreshold(parseFloat(e.target.value)))}
+                style={{ width: '80px', cursor: 'pointer' }}
+                title="Gesture Confidence Threshold"
+              />
+              {lastConfidence > 0 && (
+                <span style={{ fontSize: '12px', fontWeight: 600, color: lastConfidence >= confidenceThreshold ? '#34d399' : '#94a3b8' }}>
+                  ({(lastConfidence * 100).toFixed(0)}%)
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
