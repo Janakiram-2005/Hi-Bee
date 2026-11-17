@@ -8,6 +8,7 @@ try:
 except Exception:
     OpenVINOTagger = None
 
+
 try:
     from .coordinate_mapper import CoordinateMapper
 except Exception:
