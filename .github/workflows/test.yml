@@ -5,11 +5,15 @@ on:
       - '**'
     paths-ignore:
       - 'multimodal/**'
+      - 'hybrid_gui_agent/**'
+      - '.github/**'
   push:
     branches:
       - 'main'
     paths-ignore:
       - 'multimodal/**'
+      - 'hybrid_gui_agent/**'
+      - '.github/**'
 
 permissions:
   id-token: write
