@@ -11,8 +11,8 @@ import {
   FingerState,
 } from './gestureRecognition';
 
-describe('gestureRecognition', () => {
-  it('calculates specificity correctly', () => {
+describe('Gesture Recognition', () => {
+  it('calculates gesture specificity', () => {
     const specific5: Gesture = {
       name: 'L-Shape',
       action: 'volume_up',
@@ -127,6 +127,7 @@ describe('gestureRecognition', () => {
       },
     };
 
+    // Broad rule placed FIRST in configured array
     const configuredGestures = [broadRule, specificRule];
 
     const currentStates: Record<FingerName, FingerState> = {
@@ -149,7 +150,7 @@ describe('gestureRecognition', () => {
     expect(specificity).toBe(5);
   });
 
-  it('validates threshold and landmark bounds', () => {
+  it('validates threshold bounds', () => {
     expect(validateGestureThreshold(null, 1000)).toBe(1000);
     expect(
       validateGestureThreshold({ name: 'g', action: 'a', threshold: 800 }),
