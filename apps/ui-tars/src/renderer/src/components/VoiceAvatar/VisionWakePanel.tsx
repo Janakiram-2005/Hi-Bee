@@ -59,7 +59,7 @@ export function VisionWakePanel({
 
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
   const lastVideoTimeRef = useRef<number>(-1);
   const lastWakeTimeRef = useRef<number>(0);
   const configuredGesturesRef = useRef<any[]>([]);
@@ -170,7 +170,7 @@ export function VisionWakePanel({
     loadGestures();
 
     const unsubscribe = window.electron?.ipcRenderer?.on(
-      'gesture:updated',
+      'gesture:updated' as any,
       loadGestures,
     );
     return () => {
