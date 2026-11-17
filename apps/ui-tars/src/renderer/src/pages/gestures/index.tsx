@@ -21,6 +21,10 @@ import {
 } from 'lucide-react';
 import { ScrollArea } from '@renderer/components/ui/scroll-area';
 import { VisionWakePanel } from '../../components/VoiceAvatar/VisionWakePanel';
+import {
+  extractSanitizedHandLandmarks,
+  extractSanitizedFingers,
+} from '../../utils/gestureState';
 
 interface FingerConfig {
   thumb: 'open' | 'closed' | 'any';
@@ -71,20 +75,51 @@ function DatasetStudio({ onSave }: { onSave?: () => void }) {
   useEffect(() => {
     const handleFace = (e: any) => {
       if (isRecording) {
+        const detail = e.detail;
+        if (!detail || detail.isFrameDrop) {
+          landmarksTimelineRef.current.push({
+            type: 'face',
+            timestamp: Date.now(),
+            data: null,
+          });
+          return;
+        }
+        const faceData = detail.landmarks || detail.faceState || detail;
         landmarksTimelineRef.current.push({
           type: 'face',
           timestamp: Date.now(),
-          data: e.detail,
+          data: faceData,
         });
       }
     };
     const handleHand = (e: any) => {
       if (isRecording) {
-        landmarksTimelineRef.current.push({
-          type: 'hand',
-          timestamp: Date.now(),
-          data: e.detail,
-        });
+        const detail = e.detail;
+        if (!detail || detail.isFrameDrop || detail.landmarks === null) {
+          // Unexpected landmark frame drop -> record null to preserve timeline continuity without corrupting model
+          landmarksTimelineRef.current.push({
+            type: 'hand',
+            timestamp: Date.now(),
+            data: null,
+          });
+          return;
+        }
+
+        const validLandmarks = extractSanitizedHandLandmarks(detail);
+        if (validLandmarks) {
+          landmarksTimelineRef.current.push({
+            type: 'hand',
+            timestamp: Date.now(),
+            data: validLandmarks,
+          });
+        } else {
+          // Corrupted landmark frame -> record null to prevent poisoning dataset
+          landmarksTimelineRef.current.push({
+            type: 'hand',
+            timestamp: Date.now(),
+            data: null,
+          });
+        }
       }
     };
     window.addEventListener('vision:raw-face-state', handleFace);
@@ -459,7 +494,7 @@ export default function GestureConfig() {
   const [testMode, setTestMode] = useState(false);
 
   const [activeGestureId, setActiveGestureId] = useState<string | null>(null);
-  const latestHandStateRef = useRef<FingerConfig | null>(null);
+  const latestHandStateRef = useRef<any>(null);
   const [faceState, setFaceState] = useState<any>(null);
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -524,13 +559,19 @@ export default function GestureConfig() {
 
     const handleRawHandState = (e: any) => {
       if (e.detail) {
-        latestHandStateRef.current = e.detail;
+        const fingers = extractSanitizedFingers(e.detail);
+        if (fingers) {
+          latestHandStateRef.current = fingers;
+        }
       }
     };
 
     const handleFaceState = (e: any) => {
       if (e.detail) {
-        setFaceState(e.detail);
+        const face = e.detail.faceState || e.detail;
+        if (face && typeof face === 'object') {
+          setFaceState(face);
+        }
       }
     };
 
@@ -546,7 +587,17 @@ export default function GestureConfig() {
 
   const captureGesture = (id: string) => {
     if (latestHandStateRef.current) {
-      updateGesture(id, { fingers: latestHandStateRef.current });
+      const fingers =
+        latestHandStateRef.current.fingers || latestHandStateRef.current;
+      updateGesture(id, {
+        fingers: {
+          thumb: fingers.thumb || 'closed',
+          index: fingers.index || 'closed',
+          middle: fingers.middle || 'closed',
+          ring: fingers.ring || 'closed',
+          pinky: fingers.pinky || 'closed',
+        },
+      });
     }
   };
 
@@ -587,16 +638,22 @@ export default function GestureConfig() {
 
   const updateFinger = (id: string, finger: keyof FingerConfig, value: any) => {
     setGestures((prev) =>
-      prev.map((g): Gesture => {
+      prev.map((g) => {
         if (g.id === id) {
-          const currentFingers: FingerConfig = g.fingers || {
+          const defaultFingers: FingerConfig = {
             thumb: 'any',
             index: 'any',
             middle: 'any',
             ring: 'any',
             pinky: 'any',
           };
-          return { ...g, fingers: { ...currentFingers, [finger]: value } };
+          return {
+            ...g,
+            fingers: {
+              ...(g.fingers || defaultFingers),
+              [finger]: value,
+            },
+          };
         }
         return g;
       }),
