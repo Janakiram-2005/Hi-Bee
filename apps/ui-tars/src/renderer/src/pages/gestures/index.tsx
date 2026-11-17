@@ -494,7 +494,7 @@ export default function GestureConfig() {
   const [testMode, setTestMode] = useState(false);
 
   const [activeGestureId, setActiveGestureId] = useState<string | null>(null);
-  const latestHandStateRef = useRef<FingerConfig | null>(null);
+  const latestHandStateRef = useRef<any>(null);
   const [faceState, setFaceState] = useState<any>(null);
   const [showLibrary, setShowLibrary] = useState(false);
 
@@ -587,7 +587,17 @@ export default function GestureConfig() {
 
   const captureGesture = (id: string) => {
     if (latestHandStateRef.current) {
-      updateGesture(id, { fingers: { ...latestHandStateRef.current } });
+      const fingers =
+        latestHandStateRef.current.fingers || latestHandStateRef.current;
+      updateGesture(id, {
+        fingers: {
+          thumb: fingers.thumb || 'closed',
+          index: fingers.index || 'closed',
+          middle: fingers.middle || 'closed',
+          ring: fingers.ring || 'closed',
+          pinky: fingers.pinky || 'closed',
+        },
+      });
     }
   };
 
@@ -630,14 +640,20 @@ export default function GestureConfig() {
     setGestures((prev) =>
       prev.map((g) => {
         if (g.id === id) {
-          const currentFingers = g.fingers || {
+          const defaultFingers: FingerConfig = {
             thumb: 'any',
             index: 'any',
             middle: 'any',
             ring: 'any',
             pinky: 'any',
           };
-          return { ...g, fingers: { ...currentFingers, [finger]: value } };
+          return {
+            ...g,
+            fingers: {
+              ...(g.fingers || defaultFingers),
+              [finger]: value,
+            },
+          };
         }
         return g;
       }),
