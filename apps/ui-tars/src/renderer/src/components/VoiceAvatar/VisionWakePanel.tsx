@@ -107,6 +107,39 @@ export function VisionWakePanel({
     time: 0,
   });
 
+  const idleFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const IDLE_FLUSH_TIMEOUT_MS = 3000;
+  const MAX_TRANSLATION_BUFFER_SIZE = 50;
+
+  const flushTranslationBuffer = (reason: string = 'idle') => {
+    if (idleFlushTimerRef.current) {
+      clearTimeout(idleFlushTimerRef.current);
+      idleFlushTimerRef.current = null;
+    }
+    if (translationBufferRef.current.length > 0) {
+      const keywords = [...translationBufferRef.current];
+      translationBufferRef.current = [];
+      console.log(
+        `[VisionWakePanel] Flushing translation buffer (reason: ${reason}):`,
+        keywords,
+      );
+      window.electron?.ipcRenderer
+        ?.invoke('visionRoute.processGestureSentence', {
+          keywords,
+        })
+        .catch(console.error);
+
+      // Flash canvas with emerald glow on flush
+      if (canvasRef.current && reason !== 'toggle_off') {
+        canvasRef.current.style.boxShadow = '0 0 15px #10b981';
+        setTimeout(() => {
+          if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+        }, 600);
+      }
+    }
+  };
+
   const handleToggleMode = useCallback((handKey?: string) => {
     const newTranslatingState = !isTranslatingRef.current;
     isTranslatingRef.current = newTranslatingState;
@@ -115,13 +148,8 @@ export function VisionWakePanel({
       `[VisionWake] Mode toggled: isTranslating=${newTranslatingState} by hand ${handKey}`,
     );
 
-    if (!newTranslatingState && translationBufferRef.current.length > 0) {
-      window.electron?.ipcRenderer
-        ?.invoke('visionRoute.processGestureSentence', {
-          keywords: translationBufferRef.current,
-        })
-        .catch(console.error);
-      translationBufferRef.current = [];
+    if (!newTranslatingState) {
+      flushTranslationBuffer('toggle_off');
     }
 
     if (canvasRef.current) {
@@ -548,7 +576,44 @@ export function VisionWakePanel({
                       (thumbTip.x - indexTip.x) * cropMetrics.targetAspectRatio,
                     ) > 0.1
                   ) {
-                    shouldWake = true;
+                    if (
+                      translationBufferRef.current.length <
+                      MAX_TRANSLATION_BUFFER_SIZE
+                    ) {
+                      translationBufferRef.current.push(label);
+                      lastAddedGestureRef.current = {
+                        name: label,
+                        time: Date.now(),
+                      };
+                      console.log(
+                        '[VisionWakePanel] Gesture buffered:',
+                        label,
+                        'Buffer:',
+                        translationBufferRef.current,
+                      );
+
+                      // Brief flash to indicate word recorded
+                      if (canvasRef.current) {
+                        canvasRef.current.style.boxShadow = '0 0 10px #60a5fa';
+                        setTimeout(() => {
+                          if (canvasRef.current)
+                            canvasRef.current.style.boxShadow = 'none';
+                        }, 300);
+                      }
+
+                      // Reset idle flush timer for inactivity timeout
+                      if (idleFlushTimerRef.current) {
+                        clearTimeout(idleFlushTimerRef.current);
+                      }
+                      idleFlushTimerRef.current = setTimeout(() => {
+                        flushTranslationBuffer('inactivity');
+                      }, IDLE_FLUSH_TIMEOUT_MS);
+                    } else {
+                      console.warn(
+                        '[VisionWakePanel] Translation buffer reached maximum bounds, auto-flushing.',
+                      );
+                      flushTranslationBuffer('max_buffer');
+                    }
                   }
                 }
               }
@@ -729,6 +794,10 @@ export function VisionWakePanel({
 
     return () => {
       active = false;
+      if (idleFlushTimerRef.current) {
+        clearTimeout(idleFlushTimerRef.current);
+        idleFlushTimerRef.current = null;
+      }
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       if (stream) stream.getTracks().forEach((t) => t.stop());
       if (videoRef.current) videoRef.current.srcObject = null;
