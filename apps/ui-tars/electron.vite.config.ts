@@ -48,12 +48,7 @@ export default defineConfig({
       }),
       tsconfigPaths(),
       externalizeDepsPlugin({
-        include: [
-          ...getExternalPkgs(),
-          '@ui-tars/sdk',
-          '@ui-tars/shared',
-          '@ui-tars/action-parser',
-        ],
+        include: [...getExternalPkgs()],
       }),
       {
         name: 'native-node-module-path',
