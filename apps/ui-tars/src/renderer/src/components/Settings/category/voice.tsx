@@ -56,7 +56,6 @@ export function VoiceSettings() {
   const {
     selectedLanguage,
     setLanguage,
-    setVoice,
     voiceWakeupMode,
     setWakeupMode,
     setWakePhrase,
@@ -109,8 +108,6 @@ export function VoiceSettings() {
       .getSetting()
       .then((s: any) => {
         if (s?.voiceLanguage) setLanguage(s.voiceLanguage);
-        if (s?.voiceAccentUri || s?.voiceAccent)
-          setVoice(s.voiceAccentUri || s.voiceAccent);
         if (s?.voiceSilenceMs) setSilenceMs(s.voiceSilenceMs);
         if (typeof s?.voiceAutoStart === 'boolean')
           setAutoStart(s.voiceAutoStart);
@@ -123,7 +120,7 @@ export function VoiceSettings() {
         }
       })
       .catch(() => {});
-  }, [setLanguage, setVoice, setWakeupMode, setWakePhrase]);
+  }, [setLanguage, setWakeupMode, setWakePhrase]);
 
   const save = (updates: Record<string, any>) => {
     const settingRpc = window.electron?.setting;

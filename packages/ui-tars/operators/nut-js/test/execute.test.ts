@@ -52,8 +52,6 @@ vi.mock('@computer-use/nut-js', async (importOriginal) => {
         mouseSpeed: 1500,
       },
       drag: vi.fn(),
-      setPosition: vi.fn(),
-      getPosition: vi.fn().mockImplementation(async () => ({ x: 100, y: 100 })),
     },
     Key: actual.Key,
     keyboard: {
@@ -125,7 +123,9 @@ describe('execute', () => {
 
     await nutJSOperator.execute(executeParams);
 
-    expect(mouse.setPosition).toHaveBeenCalledWith(new Point(138, 698));
+    expect(mouse.move).toHaveBeenCalledWith(
+      straightTo(new Point(138.24, 697.68)),
+    );
 
     expect(mouse.click).toHaveBeenCalledWith(Button.LEFT);
   });
@@ -227,9 +227,11 @@ describe('execute', () => {
 
     await nutJSOperator.execute(executeParams);
 
-    expect(mouse.setPosition).toHaveBeenCalledWith(new Point(138, 698));
+    expect(mouse.move).toHaveBeenCalledWith(
+      straightTo(new Point(138.24, 697.68)),
+    );
 
-    expect(mouse.drag).toHaveBeenCalledWith(straightTo(new Point(336, 699)));
+    expect(mouse.drag).toHaveBeenCalledWith(straightTo(new Point(336, 698.76)));
   });
 
   it('drag slider vertically', async () => {
@@ -257,8 +259,12 @@ describe('execute', () => {
 
     await nutJSOperator.execute(executeParams);
 
-    expect(mouse.setPosition).toHaveBeenCalledWith(new Point(138, 698));
+    expect(mouse.move).toHaveBeenCalledWith(
+      straightTo(new Point(138.24, 697.68)),
+    );
 
-    expect(mouse.drag).toHaveBeenCalledWith(straightTo(new Point(138, 590)));
+    expect(mouse.drag).toHaveBeenCalledWith(
+      straightTo(new Point(138.24, 589.68)),
+    );
   });
 });
