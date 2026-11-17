@@ -48,11 +48,18 @@ export default defineConfig({
       }),
       tsconfigPaths(),
       externalizeDepsPlugin({
-        include: [
-          ...getExternalPkgs(),
+        include: [...getExternalPkgs()],
+        exclude: [
           '@ui-tars/sdk',
           '@ui-tars/shared',
           '@ui-tars/action-parser',
+          '@google-cloud/vertexai',
+          '@anthropic-ai/sdk',
+          '@anthropic-ai/vertex-sdk',
+          '@mediapipe/tasks-vision',
+          'mongodb',
+          'ws',
+          'jose',
         ],
       }),
       {
