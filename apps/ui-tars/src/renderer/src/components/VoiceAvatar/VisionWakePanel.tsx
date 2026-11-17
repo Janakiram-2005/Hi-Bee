@@ -26,6 +26,9 @@ export function VisionWakePanel({ autoStart = false, testGestures = null }: { au
   const translationBufferRef = useRef<string[]>([]);
   const lastAddedGestureRef = useRef<{ name: string, time: number }>({ name: '', time: 0 });
   const openPalmHoldStartRef = useRef<number>(0);
+  const gestureHoldStartRef = useRef<number>(0);
+  const activeGestureRef = useRef<any>(null);
+  const gestureSessionFocusRef = useRef<boolean>(false);
 
   useEffect(() => {
     testGesturesRef.current = testGestures;
@@ -364,21 +367,65 @@ export function VisionWakePanel({ autoStart = false, testGestures = null }: { au
             
             ctx.restore();
 
-            if ((shouldWake || detectedGesture) && (Date.now() - lastWakeTimeRef.current > 3000)) {
-               lastWakeTimeRef.current = Date.now();
-               
-               if (detectedGesture) {
-                 window.dispatchEvent(new CustomEvent('vision:gesture-triggered', { detail: detectedGesture }));
-               } else {
-                 window.dispatchEvent(new CustomEvent('vision:wake-triggered'));
-               }
-               
-               if (canvasRef.current) {
-                 canvasRef.current.style.boxShadow = '0 0 20px #4ade80';
-                 setTimeout(() => {
-                   if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
-                 }, 1000);
-               }
+            // Validate threshold bounds and handle gesture session focus
+            if (detectedGesture) {
+              const rawHold = detectedGesture.holdTime || detectedGesture.hold_threshold || detectedGesture.threshold_bounds?.hold_time || 1200;
+              const holdRequired = Math.max(300, Math.min(4000, Number(rawHold) || 1200));
+
+              if (!gestureSessionFocusRef.current) {
+                gestureSessionFocusRef.current = true;
+                window.dispatchEvent(new CustomEvent('vision:gesture-session-focus', { detail: { active: true, gesture: detectedGesture.name } }));
+              }
+
+              if (gestureHoldStartRef.current === 0 || activeGestureRef.current?.name !== detectedGesture.name) {
+                gestureHoldStartRef.current = Date.now();
+                activeGestureRef.current = detectedGesture;
+              }
+
+              const elapsed = Date.now() - gestureHoldStartRef.current;
+              const progress = Math.min(1.0, elapsed / holdRequired);
+              window.dispatchEvent(new CustomEvent('vision:gesture-hold-progress', { detail: { gesture: detectedGesture.name, progress } }));
+
+              // Visual hold indicator on canvas
+              ctx.save();
+              ctx.strokeStyle = '#3b82f6';
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.arc(canvas.width - 24, 24, 14, -Math.PI / 2, -Math.PI / 2 + progress * 2 * Math.PI);
+              ctx.stroke();
+              ctx.restore();
+
+              if (elapsed >= holdRequired && (Date.now() - lastWakeTimeRef.current > 1500)) {
+                lastWakeTimeRef.current = Date.now();
+                window.dispatchEvent(new CustomEvent('vision:gesture-triggered', { detail: detectedGesture }));
+
+                if (canvasRef.current) {
+                  canvasRef.current.style.boxShadow = '0 0 20px #4ade80';
+                  setTimeout(() => {
+                    if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+                  }, 1000);
+                }
+              }
+            } else {
+              if (gestureSessionFocusRef.current) {
+                gestureSessionFocusRef.current = false;
+                gestureHoldStartRef.current = 0;
+                activeGestureRef.current = null;
+                window.dispatchEvent(new CustomEvent('vision:gesture-session-focus', { detail: { active: false } }));
+                window.dispatchEvent(new CustomEvent('vision:gesture-hold-progress', { detail: { progress: 0 } }));
+              }
+
+              if (shouldWake && (Date.now() - lastWakeTimeRef.current > 3000)) {
+                lastWakeTimeRef.current = Date.now();
+                window.dispatchEvent(new CustomEvent('vision:wake-triggered'));
+
+                if (canvasRef.current) {
+                  canvasRef.current.style.boxShadow = '0 0 20px #4ade80';
+                  setTimeout(() => {
+                    if (canvasRef.current) canvasRef.current.style.boxShadow = 'none';
+                  }, 1000);
+                }
+              }
             }
           }
           

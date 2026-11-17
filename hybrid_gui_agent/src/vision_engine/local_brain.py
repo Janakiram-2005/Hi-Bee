@@ -10,6 +10,12 @@ import base64
 import os
 import math
 
+try:
+    from utils.status_reporter import report_status
+except ImportError:
+    def report_status(event: str, data: dict = None) -> None:
+        pass
+
 HAND_CONNECTIONS = frozenset([
   (0, 1), (1, 2), (2, 3), (3, 4),
   (0, 5), (5, 6), (6, 7), (7, 8),
@@ -17,6 +23,145 @@ HAND_CONNECTIONS = frozenset([
   (9, 13), (13, 14), (14, 15), (15, 16),
   (13, 17), (0, 17), (17, 18), (18, 19), (19, 20)
 ])
+
+# Gesture Threshold Bounds
+MIN_HOLD_BOUND = 0.3
+MAX_HOLD_BOUND = 4.0
+DEFAULT_HOLD_TIME = 1.2
+
+DEFAULT_BLINK_THRESHOLD = 0.45
+MIN_BLINK_THRESHOLD = 0.20
+MAX_BLINK_THRESHOLD = 0.90
+DEFAULT_PITCH_THRESHOLD = 15.0
+DEFAULT_YAW_THRESHOLD = 15.0
+
+def get_validated_hold_time(gesture: dict) -> float:
+    """Validate gesture hold time against configured threshold bounds [0.3s, 4.0s]."""
+    for key in ('hold_threshold', 'hold_time', 'holdTime', 'hold_duration'):
+        if key in gesture and gesture[key] is not None:
+            try:
+                val = float(gesture[key])
+                return max(MIN_HOLD_BOUND, min(MAX_HOLD_BOUND, val))
+            except (ValueError, TypeError):
+                pass
+    return DEFAULT_HOLD_TIME
+
+def validate_face_threshold_bounds(gesture: dict) -> dict:
+    """Validate configured threshold bounds for eye and head gestures."""
+    bounds = gesture.get('threshold_bounds') or {}
+    blink_raw = bounds.get('blink_threshold', gesture.get('blink_threshold', DEFAULT_BLINK_THRESHOLD))
+    try:
+        blink_thresh = max(MIN_BLINK_THRESHOLD, min(MAX_BLINK_THRESHOLD, float(blink_raw)))
+    except (ValueError, TypeError):
+        blink_thresh = DEFAULT_BLINK_THRESHOLD
+
+    pitch_raw = bounds.get('pitch_threshold', gesture.get('pitch_threshold', DEFAULT_PITCH_THRESHOLD))
+    try:
+        pitch_thresh = max(5.0, min(60.0, float(pitch_raw)))
+    except (ValueError, TypeError):
+        pitch_thresh = DEFAULT_PITCH_THRESHOLD
+
+    yaw_raw = bounds.get('yaw_threshold', gesture.get('yaw_threshold', DEFAULT_YAW_THRESHOLD))
+    try:
+        yaw_thresh = max(5.0, min(60.0, float(yaw_raw)))
+    except (ValueError, TypeError):
+        yaw_thresh = DEFAULT_YAW_THRESHOLD
+
+    return {
+        'blink_threshold': blink_thresh,
+        'pitch_threshold': pitch_thresh,
+        'yaw_threshold': yaw_thresh
+    }
+
+def get_finger_states(hand_landmarks):
+    # Calculate finger states (open/closed)
+    # Thumb: compare x-coordinates for open/close relative to hand orientation
+    thumb_open = hand_landmarks[4].x < hand_landmarks[3].x if hand_landmarks[17].x > hand_landmarks[5].x else hand_landmarks[4].x > hand_landmarks[3].x
+    index_open = hand_landmarks[8].y < hand_landmarks[6].y
+    middle_open = hand_landmarks[12].y < hand_landmarks[10].y
+    ring_open = hand_landmarks[16].y < hand_landmarks[14].y
+    pinky_open = hand_landmarks[20].y < hand_landmarks[18].y
+    
+    return {
+        "thumb": "open" if thumb_open else "closed",
+        "index": "open" if index_open else "closed",
+        "middle": "open" if middle_open else "closed",
+        "ring": "open" if ring_open else "closed",
+        "pinky": "open" if pinky_open else "closed"
+    }
+
+def detect_hand_gestures(hand_landmarks, custom_gestures):
+    states = get_finger_states(hand_landmarks)
+    matched = []
+    for g in custom_gestures:
+        if g.get('type', 'hand') != 'hand': continue
+        match = True
+        for finger, req_state in g.get('fingers', {}).items():
+            if req_state != 'any' and states.get(finger) != req_state:
+                match = False
+                break
+        if match:
+            matched.append(g)
+    return matched, states
+
+def detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now, blink_history=None, head_history=None):
+    if blink_history is None:
+        blink_history = []
+    if head_history is None:
+        head_history = []
+    matched = []
+    
+    # Record blink event (debounce by checking last entry)
+    if blink_left > 0.45 or blink_right > 0.45:
+        if not blink_history or now - blink_history[-1]['time'] > 0.3:
+            blink_history.append({'time': now, 'left': blink_left > 0.45, 'right': blink_right > 0.45})
+            
+    # Clean old blinks (> 1.5s)
+    blink_history[:] = [b for b in blink_history if now - b['time'] < 1.5]
+    
+    head_history.append({'time': now, 'pitch': pitch, 'yaw': yaw})
+    head_history[:] = [h for h in head_history if now - h['time'] < 1.5]
+    
+    # Calculate max deltas for head
+    pitches = [h['pitch'] for h in head_history]
+    yaws = [h['yaw'] for h in head_history]
+    pitch_delta = max(pitches) - min(pitches) if pitches else 0
+    yaw_delta = max(yaws) - min(yaws) if yaws else 0
+    
+    full_blinks = [b for b in blink_history if b['left'] and b['right']]
+    is_double_blink = len(full_blinks) >= 2
+    
+    winks_left = [b for b in blink_history if b['left'] and not b['right']]
+    winks_right = [b for b in blink_history if not b['left'] and b['right']]
+    
+    for g in custom_gestures:
+        t = g.get('type', 'hand')
+        bounds = validate_face_threshold_bounds(g)
+        is_nod = pitch_delta > bounds['pitch_threshold'] and yaw_delta < 12.0
+        is_shake = yaw_delta > bounds['yaw_threshold'] and pitch_delta < 12.0
+        
+        if t == 'eye':
+            ea = g.get('eyeAction')
+            if ea == 'double_blink' and is_double_blink:
+                matched.append(g)
+            elif ea == 'wink_left' and len(winks_left) > 0:
+                matched.append(g)
+            elif ea == 'wink_right' and len(winks_right) > 0:
+                matched.append(g)
+        elif t == 'head':
+            ha = g.get('headAction')
+            if ha == 'nod' and is_nod:
+                matched.append(g)
+            elif ha == 'shake' and is_shake:
+                matched.append(g)
+                
+    # If we matched an eye or head gesture, clear history to avoid spam
+    if any(g.get('type') in ['eye', 'head'] for g in matched):
+        blink_history.clear()
+        head_history.clear()
+        
+    return matched
+
 
 def process_vision():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -54,6 +199,7 @@ def process_vision():
     gesture_states = {} # Tracks held time for gestures
     blink_history = []
     head_history = []
+    session_focus_active = False
 
     gesture_file_path = sys.argv[1] if len(sys.argv) > 1 else None
     
@@ -66,98 +212,8 @@ def process_vision():
                 pass
         return []
 
-    def get_finger_states(hand_landmarks):
-        # Calculate finger states (open/closed)
-        # Thumb: compare x-coordinates for open/close relative to hand orientation
-        thumb_open = hand_landmarks[4].x < hand_landmarks[3].x if hand_landmarks[17].x > hand_landmarks[5].x else hand_landmarks[4].x > hand_landmarks[3].x
-        index_open = hand_landmarks[8].y < hand_landmarks[6].y
-        middle_open = hand_landmarks[12].y < hand_landmarks[10].y
-        ring_open = hand_landmarks[16].y < hand_landmarks[14].y
-        pinky_open = hand_landmarks[20].y < hand_landmarks[18].y
-        
-        return {
-            "thumb": "open" if thumb_open else "closed",
-            "index": "open" if index_open else "closed",
-            "middle": "open" if middle_open else "closed",
-            "ring": "open" if ring_open else "closed",
-            "pinky": "open" if pinky_open else "closed"
-        }
-
-    def detect_hand_gestures(hand_landmarks, custom_gestures):
-        states = get_finger_states(hand_landmarks)
-        matched = []
-        for g in custom_gestures:
-            if g.get('type', 'hand') != 'hand': continue
-            match = True
-            for finger, req_state in g.get('fingers', {}).items():
-                if req_state != 'any' and states.get(finger) != req_state:
-                    match = False
-                    break
-            if match:
-                matched.append(g)
-        return matched, states
-        
-    def detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now):
-        matched = []
-        
-        # Determine current blinks
-        # Use simple thresholding on blendshape scores
-        is_blink_left = blink_left > 0.45
-        is_blink_right = blink_right > 0.45
-        
-        nonlocal blink_history
-        # Record blink event (debounce by checking last entry)
-        if is_blink_left or is_blink_right:
-            if not blink_history or now - blink_history[-1]['time'] > 0.3:
-                blink_history.append({'time': now, 'left': is_blink_left, 'right': is_blink_right})
-                
-        # Clean old blinks (> 1.5s)
-        blink_history = [b for b in blink_history if now - b['time'] < 1.5]
-        
-        nonlocal head_history
-        head_history.append({'time': now, 'pitch': pitch, 'yaw': yaw})
-        head_history = [h for h in head_history if now - h['time'] < 1.5]
-        
-        # Calculate max deltas for head
-        pitches = [h['pitch'] for h in head_history]
-        yaws = [h['yaw'] for h in head_history]
-        pitch_delta = max(pitches) - min(pitches) if pitches else 0
-        yaw_delta = max(yaws) - min(yaws) if yaws else 0
-        
-        is_nod = pitch_delta > 15.0 and yaw_delta < 12.0
-        is_shake = yaw_delta > 15.0 and pitch_delta < 12.0
-        
-        # Check double blink (2 distinct blinks within 1.5s where both eyes blinked)
-        full_blinks = [b for b in blink_history if b['left'] and b['right']]
-        is_double_blink = len(full_blinks) >= 2
-        
-        # Check winks
-        winks_left = [b for b in blink_history if b['left'] and not b['right']]
-        winks_right = [b for b in blink_history if not b['left'] and b['right']]
-        
-        for g in custom_gestures:
-            t = g.get('type', 'hand')
-            if t == 'eye':
-                ea = g.get('eyeAction')
-                if ea == 'double_blink' and is_double_blink:
-                    matched.append(g)
-                elif ea == 'wink_left' and len(winks_left) > 0:
-                    matched.append(g)
-                elif ea == 'wink_right' and len(winks_right) > 0:
-                    matched.append(g)
-            elif t == 'head':
-                ha = g.get('headAction')
-                if ha == 'nod' and is_nod:
-                    matched.append(g)
-                elif ha == 'shake' and is_shake:
-                    matched.append(g)
-                    
-        # If we matched an eye or head gesture, we clear the history to avoid spam
-        if any(g.get('type') in ['eye', 'head'] for g in matched):
-            blink_history.clear()
-            head_history.clear()
-            
-        return matched
+    def detect_face_gestures_scoped(custom_gestures, blink_left, blink_right, pitch, yaw, now):
+        return detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now, blink_history, head_history)
 
     try:
         while True:
@@ -250,7 +306,7 @@ def process_vision():
                         
                 # Detect Face Gestures (Eye/Head)
                 now_t = time.time()
-                face_matched = detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now_t)
+                face_matched = detect_face_gestures_scoped(custom_gestures, blink_left, blink_right, pitch, yaw, now_t)
                 for mg in face_matched:
                     current_gestures.append(mg)
                 
@@ -284,24 +340,68 @@ def process_vision():
                         "finger_states": states
                     })
             
-            # Update gesture holds based on action
+            # Update gesture holds based on action and manage session focus
             now = time.time()
             active_actions = {g['action']: g for g in current_gestures}
+
+            if active_actions and not session_focus_active:
+                session_focus_active = True
+                print(json.dumps({"type": "gesture-session-focus", "active": True}))
+                sys.stdout.flush()
+                report_status("gesture:focus", {"active": True, "count": len(active_actions)})
+            elif not active_actions and session_focus_active:
+                session_focus_active = False
+                print(json.dumps({"type": "gesture-session-focus", "active": False}))
+                sys.stdout.flush()
+                report_status("gesture:focus", {"active": False, "count": 0})
             
             for action, g in active_actions.items():
+                hold_required = get_validated_hold_time(g)
                 if action not in gesture_states:
                     gesture_states[action] = now
-                elif now - gesture_states[action] >= HOLD_TIME_REQUIRED:
-                    # Emit gesture trigger
+                    # Immediate initial feedback
                     print(json.dumps({
-                        "type": "vision-gesture", 
-                        "gesture": g['name'], 
-                        "action": action, 
-                        "actionArg": g.get('actionArg')
+                        "type": "gesture-hold-progress",
+                        "gesture": g['name'],
+                        "action": action,
+                        "progress": 0.0,
+                        "elapsed": 0.0,
+                        "required": hold_required
                     }))
                     sys.stdout.flush()
-                    # Reset to avoid spamming
-                    gesture_states[action] = now + 1.5 # 1.5 second cooldown
+                else:
+                    elapsed = now - gesture_states[action]
+                    if elapsed < 0:
+                        continue # in cooldown
+                    progress = min(1.0, elapsed / hold_required)
+                    # Immediate feedback within latency bounds
+                    print(json.dumps({
+                        "type": "gesture-hold-progress",
+                        "gesture": g['name'],
+                        "action": action,
+                        "progress": round(progress, 2),
+                        "elapsed": round(elapsed, 3),
+                        "required": hold_required
+                    }))
+                    sys.stdout.flush()
+
+                    if elapsed >= hold_required:
+                        # Emit gesture trigger
+                        print(json.dumps({
+                            "type": "vision-gesture", 
+                            "gesture": g['name'], 
+                            "action": action, 
+                            "actionArg": g.get('actionArg'),
+                            "hold_duration": round(elapsed, 3)
+                        }))
+                        sys.stdout.flush()
+                        report_status("gesture:trigger", {
+                            "gesture": g['name'],
+                            "action": action,
+                            "hold_duration": round(elapsed, 3)
+                        })
+                        # Reset to avoid spamming
+                        gesture_states[action] = now + 1.5 # 1.5 second cooldown
                     
             # Clear states for actions no longer active
             inactive_actions = [a for a in gesture_states.keys() if a not in active_actions]

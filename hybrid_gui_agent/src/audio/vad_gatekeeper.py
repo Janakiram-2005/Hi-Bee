@@ -79,6 +79,13 @@ WAKE_HOTKEY          = "alt+space"
 WEBRTCVAD_AGGRESSIVENESS = 2    # 0 (least) … 3 (most) aggressive speech filtering
 SPEECH_FRAMES_TO_WAKE    = 3    # consecutive speech frames required to wake (~90 ms debounce)
 
+# Calibrated VAD threshold bounds and noise adaptation defaults
+DEFAULT_MIN_RMS_THRESHOLD       = 300.0   # minimum valid threshold
+DEFAULT_MAX_RMS_THRESHOLD       = 5000.0  # maximum safe threshold
+DEFAULT_CALIBRATION_MARGIN      = 150.0   # headroom above ambient noise floor
+DEFAULT_CALIBRATION_MULTIPLIER  = 1.5     # safety multiplier for noise floor
+SPEECH_FRAMES_TO_WAKE_CALIBRATED = 5      # debounced 150 ms window for calibrated environments
+
 
 # ---------------------------------------------------------------------------
 # State enum
@@ -93,7 +100,8 @@ class VADState(Enum):
 # ---------------------------------------------------------------------------
 class VADGatekeeper:
     """
-    Local-only voice activity detection firewall.
+    Local-only voice activity detection firewall with dynamic noise floor
+    calibration and gesture session focus protection.
 
     Parameters
     ----------
@@ -106,6 +114,12 @@ class VADGatekeeper:
     on_audio_chunk_cb : (bytes) -> None
         Called for every 30 ms PCM chunk *only* while STATE_LISTENING.
         Forward these bytes directly to the WebSocket audio sender.
+    min_threshold : float, optional
+        Lower bound for RMS speech threshold (default 300.0).
+    max_threshold : float, optional
+        Upper bound for RMS speech threshold (default 5000.0).
+    speech_frames_to_wake : int, optional
+        Consecutive speech frames required to wake (default SPEECH_FRAMES_TO_WAKE).
     """
 
     def __init__(
@@ -113,6 +127,9 @@ class VADGatekeeper:
         on_wake_cb:         Callable[[], None],
         on_sleep_cb:        Callable[[], None],
         on_audio_chunk_cb:  Callable[[bytes], None],
+        min_threshold:      float = DEFAULT_MIN_RMS_THRESHOLD,
+        max_threshold:      float = DEFAULT_MAX_RMS_THRESHOLD,
+        speech_frames_to_wake: int = SPEECH_FRAMES_TO_WAKE,
     ):
         self._on_wake         = on_wake_cb
         self._on_sleep        = on_sleep_cb
@@ -125,13 +142,26 @@ class VADGatekeeper:
         self._monitor_thread: Optional[threading.Thread] = None
         self._inactivity_timer: Optional[threading.Timer] = None
 
+        # Calibration & threshold bounds configuration
+        self._min_threshold: float = float(min_threshold)
+        self._max_threshold: float = float(max_threshold)
+        self._calibration_margin: float = DEFAULT_CALIBRATION_MARGIN
+        self._calibration_multiplier: float = DEFAULT_CALIBRATION_MULTIPLIER
+        self._noise_floor: float = 100.0  # initial ambient baseline
+        self._rms_threshold: float = float(RMS_ENERGY_THRESHOLD)
+        self._speech_frames_to_wake: int = max(1, int(speech_frames_to_wake))
+        self._is_calibrated: bool = False
+
+        # Gesture session focus lock
+        self._gesture_focus_active: bool = False
+
         # VAD back-end selection
         self._vad: Optional["webrtcvad.Vad"] = None
         if _WEBRTCVAD_AVAILABLE:
             self._vad = webrtcvad.Vad(WEBRTCVAD_AGGRESSIVENESS)
             logger.info("[VADGatekeeper] Using webrtcvad (aggressiveness=%d).", WEBRTCVAD_AGGRESSIVENESS)
         else:
-            logger.info("[VADGatekeeper] Using RMS energy threshold (%d).", RMS_ENERGY_THRESHOLD)
+            logger.info("[VADGatekeeper] Using RMS energy threshold (%.1f).", self._rms_threshold)
 
         # PyAudio stream handle
         self._pa_instance: Optional["pyaudio.PyAudio"] = None
@@ -194,6 +224,126 @@ class VADGatekeeper:
         logger.debug("[VADGatekeeper] Activity notified — inactivity timer reset.")
 
     # ------------------------------------------------------------------
+    # Calibration & Gesture Session Focus API
+    # ------------------------------------------------------------------
+
+    @property
+    def rms_threshold(self) -> float:
+        """Currently configured or calibrated RMS speech threshold."""
+        return self._rms_threshold
+
+    @property
+    def noise_floor(self) -> float:
+        """Estimated or measured ambient background noise floor RMS."""
+        return self._noise_floor
+
+    @property
+    def is_calibrated(self) -> bool:
+        """Whether a formal ambient noise calibration has been executed."""
+        return self._is_calibrated
+
+    @property
+    def speech_frames_to_wake(self) -> int:
+        """Consecutive speech frames required to trigger wake."""
+        return self._speech_frames_to_wake
+
+    @speech_frames_to_wake.setter
+    def speech_frames_to_wake(self, val: int) -> None:
+        self._speech_frames_to_wake = max(1, int(val))
+
+    @property
+    def gesture_focus_active(self) -> bool:
+        """Whether an active gesture navigation session currently holds input focus."""
+        with self._state_lock:
+            return self._gesture_focus_active
+
+    def set_gesture_focus(self, active: bool) -> None:
+        """
+        Acquire or release gesture session focus.
+
+        When active, VAD suppresses wake state transitions from speech/noise
+        energy to prevent disruption and input instability during gesture sessions.
+        """
+        with self._state_lock:
+            if self._gesture_focus_active == active:
+                return
+            self._gesture_focus_active = bool(active)
+
+        logger.info(
+            "[VADGatekeeper] Gesture session focus %s.",
+            "ACQUIRED — VAD audio wake suppressed" if active else "RELEASED",
+        )
+        report_status("vad:gesture_focus", {"active": self._gesture_focus_active})
+
+    def calibrate(
+        self,
+        samples: Optional[list[float]] = None,
+        frames: Optional[list[bytes]] = None,
+        noise_floor: Optional[float] = None,
+        multiplier: Optional[float] = None,
+        margin: Optional[float] = None,
+        min_threshold: Optional[float] = None,
+        max_threshold: Optional[float] = None,
+    ) -> float:
+        """
+        Calibrate speech threshold bounds based on ambient background noise.
+
+        Validates configured threshold bounds and prevents spurious state transitions
+        caused by ambient background noise.
+        """
+        if min_threshold is not None:
+            self._min_threshold = max(50.0, float(min_threshold))
+        if max_threshold is not None:
+            self._max_threshold = max(self._min_threshold, float(max_threshold))
+        if multiplier is not None:
+            self._calibration_multiplier = max(1.0, float(multiplier))
+        if margin is not None:
+            self._calibration_margin = max(0.0, float(margin))
+
+        # Compute noise floor from provided frames, samples, or explicit value
+        if noise_floor is not None:
+            self._noise_floor = max(0.0, float(noise_floor))
+        elif frames:
+            rms_list = [self._compute_rms(f) for f in frames]
+            valid = [r for r in rms_list if r is not None]
+            if valid:
+                self._noise_floor = float(sum(valid) / len(valid))
+        elif samples:
+            self._noise_floor = float(sum(samples) / max(len(samples), 1))
+
+        # Enforce threshold calculation within configured bounds
+        computed = (self._noise_floor * self._calibration_multiplier) + self._calibration_margin
+        self._rms_threshold = max(self._min_threshold, min(self._max_threshold, computed))
+        self._is_calibrated = True
+
+        logger.info(
+            "[VADGatekeeper] Calibrated: noise_floor=%.2f, rms_threshold=%.2f (bounds: [%.1f, %.1f]).",
+            self._noise_floor,
+            self._rms_threshold,
+            self._min_threshold,
+            self._max_threshold,
+        )
+        report_status("vad:calibrated", {
+            "noise_floor": self._noise_floor,
+            "threshold": self._rms_threshold,
+            "min_threshold": self._min_threshold,
+            "max_threshold": self._max_threshold,
+        })
+        return self._rms_threshold
+
+    def _adapt_noise_floor(self, raw_chunk: bytes) -> None:
+        """Smoothly track background noise floor during sleeping frames."""
+        rms = self._compute_rms(raw_chunk)
+        if rms is None or rms <= 0:
+            return
+        # Only adapt if chunk is reasonably quiet (below 80% of current threshold)
+        if rms < self._rms_threshold * 0.8:
+            alpha = 0.05
+            self._noise_floor = (1.0 - alpha) * self._noise_floor + alpha * rms
+            computed = (self._noise_floor * self._calibration_multiplier) + self._calibration_margin
+            self._rms_threshold = max(self._min_threshold, min(self._max_threshold, computed))
+
+    # ------------------------------------------------------------------
     # State transitions
     # ------------------------------------------------------------------
 
@@ -202,10 +352,31 @@ class VADGatekeeper:
         with self._state_lock:
             return self._state
 
-    def _transition_to_listening(self) -> None:
+    def _transition_to_listening(self, force: bool = False) -> bool:
+        """
+        Transition SLEEPING → LISTENING.
+
+        Parameters
+        ----------
+        force : bool
+            If True (e.g. manual hotkey), overrides active gesture session focus.
+            If False (e.g. audio monitor loop), wake is suppressed while
+            gesture session focus is active.
+
+        Returns
+        -------
+        bool: True if transition occurred or already listening; False if suppressed.
+        """
         with self._state_lock:
+            if self._gesture_focus_active and not force:
+                logger.info(
+                    "[VADGatekeeper] ▶ Wake transition suppressed — active gesture session in focus."
+                )
+                report_status("vad:wake_suppressed", {"reason": "gesture_session_focus"})
+                return False
+
             if self._state == VADState.LISTENING:
-                return
+                return True
             self._state = VADState.LISTENING
 
         logger.info("[VADGatekeeper] ▶ Transition → STATE_LISTENING. Invoking on_wake callback.")
@@ -216,6 +387,7 @@ class VADGatekeeper:
 
         self._reset_inactivity_timer()
         report_status("vad:wake")
+        return True
 
     def _transition_to_sleeping(self) -> None:
         with self._state_lock:
@@ -237,7 +409,7 @@ class VADGatekeeper:
 
     def _hotkey_wake_handler(self) -> None:
         logger.info("[VADGatekeeper] Hotkey '%s' pressed — forcing wake.", WAKE_HOTKEY)
-        self._transition_to_listening()
+        self._transition_to_listening(force=True)
 
     # ------------------------------------------------------------------
     # Inactivity timer helpers
@@ -327,23 +499,30 @@ class VADGatekeeper:
                 time.sleep(0.05)
                 continue
 
+            # Check if gesture session currently holds focus
+            gesture_in_focus = self.gesture_focus_active
+            if gesture_in_focus:
+                consecutive_speech_frames = 0
+
             # ---- Speech / energy detection --------------------------------
             is_speech = self._detect_speech(raw_chunk)
 
             current_state = self.state
 
             if current_state == VADState.SLEEPING:
-                if is_speech:
+                if is_speech and not gesture_in_focus:
                     consecutive_speech_frames += 1
-                    if consecutive_speech_frames >= SPEECH_FRAMES_TO_WAKE:
+                    if consecutive_speech_frames >= self._speech_frames_to_wake:
                         logger.info(
                             "[VADGatekeeper] Speech energy detected across %d frames — waking.",
                             consecutive_speech_frames,
                         )
                         consecutive_speech_frames = 0
-                        self._transition_to_listening()
+                        self._transition_to_listening(force=False)
                 else:
                     consecutive_speech_frames = 0
+                    if not is_speech:
+                        self._adapt_noise_floor(raw_chunk)
 
             elif current_state == VADState.LISTENING:
                 consecutive_speech_frames = 0
@@ -356,22 +535,34 @@ class VADGatekeeper:
         self._close_audio_stream()
         logger.info("[VADGatekeeper] Audio monitor loop exited.")
 
+    def _compute_rms(self, raw_chunk: bytes) -> Optional[float]:
+        """Compute root-mean-square amplitude of 16-bit mono PCM bytes."""
+        try:
+            n_samples = len(raw_chunk) // SAMPLE_WIDTH
+            if n_samples == 0:
+                return 0.0
+            samples = struct.unpack(f"<{n_samples}h", raw_chunk[:n_samples * SAMPLE_WIDTH])
+            return math.sqrt(sum(s * s for s in samples) / max(n_samples, 1))
+        except Exception:
+            return None
+
     def _detect_speech(self, raw_chunk: bytes) -> bool:
         """
         Detect whether the audio frame contains speech.
-        Prefers webrtcvad; falls back to RMS energy threshold.
+        Prefers webrtcvad validated against calibrated noise floor; falls back to calibrated RMS energy threshold.
         """
+        rms = self._compute_rms(raw_chunk)
+        if rms is None:
+            return False
+
         if self._vad is not None:
             try:
-                return self._vad.is_speech(raw_chunk, SAMPLE_RATE)
+                vad_speech = self._vad.is_speech(raw_chunk, SAMPLE_RATE)
+                if vad_speech and (not self._is_calibrated or rms > (self._noise_floor + 40.0)):
+                    return True
+                return False
             except Exception:
                 pass  # fall through to RMS
 
-        # RMS energy fallback
-        try:
-            n_samples = len(raw_chunk) // SAMPLE_WIDTH
-            samples   = struct.unpack(f"<{n_samples}h", raw_chunk[:n_samples * SAMPLE_WIDTH])
-            rms = math.sqrt(sum(s * s for s in samples) / max(n_samples, 1))
-            return rms > RMS_ENERGY_THRESHOLD
-        except Exception:
-            return False
+        # Calibrated RMS energy fallback
+        return rms > self._rms_threshold

@@ -49,12 +49,28 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     currentAction: null,
   });
 
+  const [gestureSessionActive, setGestureSessionActive] = useState(false);
+  const [gestureHoldProgress, setGestureHoldProgress] = useState(0);
+  const gestureSessionActiveRef = useRef(false);
+
   useEffect(() => {
     const handler = (_event: any, payload: any) => {
       const { event, data } = payload;
+
+      if (event === 'gesture:focus' || event === 'vad:gesture_focus') {
+        const active = !!data?.active;
+        gestureSessionActiveRef.current = active;
+        setGestureSessionActive(active);
+        api.logFromRenderer({ message: `[VoiceWidget] Gesture session focus ${active ? 'acquired' : 'released'}` }).catch(() => {});
+      }
+
       setPythonState((prev) => {
         const next = { ...prev };
         if (event === 'vad:wake') {
+          if (gestureSessionActiveRef.current) {
+            api.logFromRenderer({ message: `[VoiceWidget] VAD wake event suppressed — active gesture session in focus` }).catch(() => {});
+            return prev;
+          }
           next.vadState = 'LISTENING';
         } else if (event === 'vad:sleep') {
           next.vadState = 'SLEEPING';
@@ -597,10 +613,25 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
     };
     window.addEventListener('vision:gesture-triggered', localGestureHandler as EventListener);
 
+    const localGestureFocusHandler = (e: CustomEvent) => {
+      const active = !!e.detail?.active;
+      gestureSessionActiveRef.current = active;
+      setGestureSessionActive(active);
+      api.logFromRenderer({ message: `[VoiceWidget] Gesture session focus ${active ? 'acquired' : 'released'}` }).catch(() => {});
+    };
+    window.addEventListener('vision:gesture-session-focus', localGestureFocusHandler as EventListener);
+
+    const localHoldProgressHandler = (e: CustomEvent) => {
+      setGestureHoldProgress(e.detail?.progress || 0);
+    };
+    window.addEventListener('vision:gesture-hold-progress', localHoldProgressHandler as EventListener);
+
     return () => {
       unsubscribe?.();
       window.removeEventListener('vision:wake-triggered', localWakeHandler);
       window.removeEventListener('vision:gesture-triggered', localGestureHandler as EventListener);
+      window.removeEventListener('vision:gesture-session-focus', localGestureFocusHandler as EventListener);
+      window.removeEventListener('vision:gesture-hold-progress', localHoldProgressHandler as EventListener);
     };
   }, [startListening, isListening, settings?.googleApiSource, toggleExpanded]);
 
@@ -696,6 +727,61 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
       >
         {permissionError && (
           <div className="voice-permission-error">{permissionError}</div>
+        )}
+
+        {/* Visual indicator for active gesture session focus */}
+        {gestureSessionActive && (
+          <div
+            className="gesture-session-focus-badge"
+            style={{
+              position: 'absolute',
+              top: '-32px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'rgba(59, 130, 246, 0.9)',
+              color: 'white',
+              padding: '4px 10px',
+              borderRadius: '12px',
+              fontSize: '11px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 0 12px rgba(59, 130, 246, 0.6)',
+              whiteSpace: 'nowrap',
+              zIndex: 100,
+            }}
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80' }}></span>
+            Gesture Focus Active
+          </div>
+        )}
+
+        {/* Immediate visual indicator for hold gesture progress */}
+        {gestureHoldProgress > 0 && gestureHoldProgress < 1 && (
+          <div
+            className="gesture-hold-progress-bar"
+            style={{
+              position: 'absolute',
+              bottom: '-10px',
+              left: '10%',
+              width: '80%',
+              height: '4px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              borderRadius: '2px',
+              overflow: 'hidden',
+              zIndex: 100,
+            }}
+          >
+            <div
+              style={{
+                width: `${gestureHoldProgress * 100}%`,
+                height: '100%',
+                background: '#4ade80',
+                transition: 'width 0.05s linear',
+              }}
+            />
+          </div>
         )}
 
         {/* Floating Screenshot Preview */}
