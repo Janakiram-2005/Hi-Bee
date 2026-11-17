@@ -22,6 +22,8 @@
         "@ui-tars/shared#build"
       ],
       "outputs": [
+        "apps/ui-tars/dist/**",
+        "apps/ui-tars/out/**",
         "dist/**",
         "out/**"
       ]
@@ -31,6 +33,8 @@
         "@ui-tars/shared#build"
       ],
       "outputs": [
+        "apps/ui-tars/out/**",
+        "apps/ui-tars/dist/**",
         "out/**",
         "dist/**"
       ]
