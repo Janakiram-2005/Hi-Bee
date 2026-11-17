@@ -49,7 +49,7 @@ class TestFeatureExtractionAndTraining:
             {'type': 'hand', 'timestamp': 1050, 'data': hand},
         ]
         features = extract_features(timeline)
-        assert len(features) == 210
+        assert len(features) == 417
         assert all(math.isfinite(f) for f in features)
         assert any(f > 0.0 for f in features)
         assert max(features) <= 1.0
@@ -71,7 +71,7 @@ class TestFeatureExtractionAndTraining:
         ]
 
         features = extract_features(timeline)
-        assert len(features) == 210
+        assert len(features) == 417
         assert all(math.isfinite(f) for f in features)
         assert any(f > 0.0 for f in features)
 
@@ -82,7 +82,7 @@ class TestFeatureExtractionAndTraining:
             {'type': 'face', 'timestamp': 1100, 'data': {'blink': True}},
         ]
         features = extract_features(timeline)
-        assert len(features) == 210
+        assert len(features) == 417
         assert all(f == 0.0 for f in features)
 
     def test_rf_model_training_with_corrupted_data_injected(self):
