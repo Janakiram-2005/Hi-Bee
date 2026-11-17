@@ -56,6 +56,7 @@ except ImportError:
         "pip install pywin32>=306"
     )
 
+
 # Avoid circular import; DOMDriver is injected at construction time
 if TYPE_CHECKING:
     from os_dom_engine.dom_driver import DOMDriver
