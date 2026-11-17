@@ -9,7 +9,14 @@ import type { UTIOPayload } from '@ui-tars/utio';
 
 import type { AppState, LocalStore } from '@main/store/types';
 
-export type Channels = '' | 'voice:toggle-listen' | 'voice:speak-text' | 'voice:open-settings-ui' | 'test-navigation:start' | 'hibee:pipeline-status';
+export type Channels =
+  | ''
+  | 'voice:toggle-listen'
+  | 'voice:speak-text'
+  | 'voice:open-settings-ui'
+  | 'test-navigation:start'
+  | 'hibee:pipeline-status'
+  | 'gesture:updated';
 
 const electronHandler = {
   ipcRenderer: {
