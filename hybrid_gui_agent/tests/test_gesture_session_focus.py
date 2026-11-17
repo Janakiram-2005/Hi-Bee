@@ -22,12 +22,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 sys.modules.setdefault('pyaudio', MagicMock())
 sys.modules.setdefault('keyboard', MagicMock())
 sys.modules.setdefault('webrtcvad', MagicMock())
-sys.modules.setdefault('cv2', MagicMock())
-mp_mock = MagicMock()
-sys.modules.setdefault('mediapipe', mp_mock)
-sys.modules.setdefault('mediapipe.tasks', mp_mock.tasks)
-sys.modules.setdefault('mediapipe.tasks.python', mp_mock.tasks.python)
-sys.modules.setdefault('mediapipe.tasks.python.vision', mp_mock.tasks.python.vision)
+try:
+    import cv2
+except ImportError:
+    sys.modules.setdefault('cv2', MagicMock())
+try:
+    import mediapipe
+except ImportError:
+    mp_mock = MagicMock()
+    sys.modules.setdefault('mediapipe', mp_mock)
+    sys.modules.setdefault('mediapipe.tasks', mp_mock.tasks)
+    sys.modules.setdefault('mediapipe.tasks.python', mp_mock.tasks.python)
+    sys.modules.setdefault('mediapipe.tasks.python.vision', mp_mock.tasks.python.vision)
 sys.modules.setdefault('winreg', MagicMock())
 
 from audio.vad_gatekeeper import (
