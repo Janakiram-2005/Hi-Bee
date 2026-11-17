@@ -271,6 +271,9 @@ export const visionRoute = {
           'train_model.py',
         ),
         path.join(process.cwd(), 'dataset', 'train_model.py'),
+        path.resolve(__dirname, '../../dataset/train_word_model.py'),
+        path.resolve(__dirname, '../../../dataset/train_word_model.py'),
+        path.resolve(__dirname, '../../../../dataset/train_word_model.py'),
       ];
       const scriptPath =
         possibleScripts.find((p: string) => fs.existsSync(p)) ||

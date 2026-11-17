@@ -94,14 +94,12 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
               const lang = useVoiceStore.getState().selectedLanguage || 'en-US';
 
               // 1. Show the raw words in the chat as the user turn
-              useVoiceStore
-                .getState()
-                .addTurn({
-                  id: uuidv4(),
-                  role: 'user',
-                  text: `[Gestures] ${words.join(' ')}`,
-                  timestamp: Date.now(),
-                });
+              useVoiceStore.getState().addTurn({
+                id: uuidv4(),
+                role: 'user',
+                text: `[Gestures] ${words.join(' ')}`,
+                timestamp: Date.now(),
+              });
               useVoiceStore.getState().setAvatarState('thinking');
 
               // 2. Call LLM to parse into grammatical sentence
@@ -112,14 +110,12 @@ function VoiceAvatarInner({ settings }: { settings: any }) {
               const parsedText = result.text;
 
               // 3. Show AI response
-              useVoiceStore
-                .getState()
-                .addTurn({
-                  id: uuidv4(),
-                  role: 'assistant',
-                  text: parsedText,
-                  timestamp: Date.now(),
-                });
+              useVoiceStore.getState().addTurn({
+                id: uuidv4(),
+                role: 'assistant',
+                text: parsedText,
+                timestamp: Date.now(),
+              });
               useVoiceStore.getState().setAvatarState('idle');
 
               // 4. Play audio using ElevenLabs
