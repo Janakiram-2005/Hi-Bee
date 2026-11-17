@@ -46,6 +46,7 @@ interface Gesture {
   fingers?: FingerConfig;
   eyeAction?: 'double_blink' | 'wink_left' | 'wink_right';
   headAction?: 'nod' | 'shake';
+  holdDuration?: number;
 }
 
 const ACTION_OPTIONS = [
@@ -506,6 +507,10 @@ export default function GestureConfig() {
   const [testMode, setTestMode] = useState(false);
 
   const [activeGestureId, setActiveGestureId] = useState<string | null>(null);
+  const [holdInfo, setHoldInfo] = useState<{
+    id: string;
+    progress: number;
+  } | null>(null);
   const latestHandStateRef = useRef<any>(null);
   const [faceState, setFaceState] = useState<any>(null);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -531,6 +536,7 @@ export default function GestureConfig() {
                 pinky: 'closed',
               },
               action: 'volume_up',
+              holdDuration: 800,
             },
             {
               id: 'g-openpalm',
@@ -544,6 +550,7 @@ export default function GestureConfig() {
                 pinky: 'open',
               },
               action: 'play_pause',
+              holdDuration: 800,
             },
             {
               id: 'g-fist',
@@ -557,6 +564,7 @@ export default function GestureConfig() {
                 pinky: 'closed',
               },
               action: 'start_listening',
+              holdDuration: 800,
             },
           ]);
         }
@@ -565,10 +573,19 @@ export default function GestureConfig() {
     const handleGesture = (e: any) => {
       if (e.detail?.id) {
         setActiveGestureId(e.detail.id);
+        setHoldInfo(null);
         setTimeout(() => setActiveGestureId(null), 2500);
       }
     };
 
+    const handleStateChange = (e: any) => {
+      const detail = e.detail;
+      if (detail?.state === 'holding' && detail.gesture?.id) {
+        setHoldInfo({ id: detail.gesture.id, progress: detail.progress });
+      } else {
+        setHoldInfo(null);
+      }
+    };
     const handleRawHandState = (e: any) => {
       if (e.detail) {
         const fingers = extractSanitizedFingers(e.detail);
@@ -588,10 +605,15 @@ export default function GestureConfig() {
     };
 
     window.addEventListener('vision:gesture-triggered', handleGesture);
+    window.addEventListener('vision:gesture-state-change', handleStateChange);
     window.addEventListener('vision:raw-hand-state', handleRawHandState);
     window.addEventListener('vision:raw-face-state', handleFaceState);
     return () => {
       window.removeEventListener('vision:gesture-triggered', handleGesture);
+      window.removeEventListener(
+        'vision:gesture-state-change',
+        handleStateChange,
+      );
       window.removeEventListener('vision:raw-hand-state', handleRawHandState);
       window.removeEventListener('vision:raw-face-state', handleFaceState);
     };
@@ -747,6 +769,11 @@ export default function GestureConfig() {
                       {activeGestureId === g.id && (
                         <span className="text-xs font-bold text-green-400 animate-pulse flex items-center gap-1">
                           <CheckCircle2 className="size-3" /> MATCHED!
+                        </span>
+                      )}
+                      {holdInfo?.id === g.id && activeGestureId !== g.id && (
+                        <span className="text-xs font-bold text-cyan-400 animate-pulse flex items-center gap-1">
+                          Holding {Math.round((holdInfo.progress || 0) * 100)}%
                         </span>
                       )}
                     </div>
@@ -919,6 +946,25 @@ export default function GestureConfig() {
                             }
                           />
                         )}
+                        <div className="flex flex-col gap-1 mt-1">
+                          <span className="text-[10px] text-slate-500 uppercase font-semibold">
+                            Hold Threshold (ms)
+                          </span>
+                          <input
+                            type="number"
+                            min="200"
+                            max="3000"
+                            step="100"
+                            value={g.holdDuration || 800}
+                            onChange={(e) =>
+                              updateGesture(g.id, {
+                                holdDuration: parseInt(e.target.value) || 800,
+                              })
+                            }
+                            className="w-full bg-[#1A233A] border border-slate-700 text-xs py-1.5 px-2 rounded text-white outline-none focus:border-blue-500"
+                            placeholder="800"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

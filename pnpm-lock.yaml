@@ -95,43 +95,25 @@ importers:
 
   apps/ui-tars:
     dependencies:
-      '@anthropic-ai/sdk':
-        specifier: ^0.105.0
-        version: 0.105.0(zod@3.25.76)
-      '@anthropic-ai/vertex-sdk':
-        specifier: ^0.18.0
-        version: 0.18.0(encoding@0.1.13)(zod@3.25.76)
       '@computer-use/node-mac-permissions':
         specifier: 2.2.2
         version: 2.2.2
-      '@google-cloud/vertexai':
-        specifier: ^1.12.0
-        version: 1.12.0(bufferutil@4.0.9)(encoding@0.1.13)(utf-8-validate@6.0.5)
-      '@mediapipe/tasks-vision':
-        specifier: ^0.10.35
-        version: 0.10.35
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
       esbuild-register:
         specifier: '*'
         version: 3.6.0(esbuild@0.25.0)
       jose:
         specifier: ^6.0.11
         version: 6.0.11
-      mongodb:
-        specifier: ^7.2.0
-        version: 7.2.0
-      re-resizable:
-        specifier: ^6.11.2
-        version: 6.11.2(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       sharp:
         specifier: 0.33.3
         version: 0.33.3
-      ws:
-        specifier: ^8.21.0
-        version: 8.21.0(bufferutil@4.0.9)(utf-8-validate@6.0.5)
     devDependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.105.0
+        version: 0.105.0(zod@3.25.76)
+      '@anthropic-ai/vertex-sdk':
+        specifier: ^0.18.0
+        version: 0.18.0(encoding@0.1.13)(zod@3.25.76)
       '@common/electron-build':
         specifier: workspace:*
         version: link:../../packages/common/electron-build
@@ -195,6 +177,12 @@ importers:
       '@electron/fuses':
         specifier: ^1.8.0
         version: 1.8.0
+      '@google-cloud/vertexai':
+        specifier: ^1.12.0
+        version: 1.12.0(bufferutil@4.0.9)(encoding@0.1.13)(utf-8-validate@6.0.5)
+      '@mediapipe/tasks-vision':
+        specifier: ^0.10.35
+        version: 0.10.35
       '@tailwindcss/vite':
         specifier: 4.1.3
         version: 4.1.3(vite@6.2.2(@types/node@20.17.17)(jiti@2.4.2)(lightningcss@1.33.0)(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0))
@@ -204,6 +192,9 @@ importers:
       '@types/node':
         specifier: ^20.14.8
         version: 20.17.17
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@typescript-eslint/eslint-plugin':
         specifier: ^5.0.0
         version: 5.62.0(@typescript-eslint/parser@5.62.0(eslint@8.57.1)(typescript@5.7.3))(eslint@8.57.1)(typescript@5.7.3)
@@ -282,9 +273,15 @@ importers:
       eslint-plugin-react:
         specifier: ^7.34.3
         version: 7.37.4(eslint@8.57.1)
+      jose:
+        specifier: ^6.0.11
+        version: 6.0.11
       js-yaml:
         specifier: ^4.1.0
         version: 4.1.0
+      mongodb:
+        specifier: ^7.2.0
+        version: 7.2.0
       ms:
         specifier: ^2.1.3
         version: 2.1.3
@@ -294,6 +291,9 @@ importers:
       prettier:
         specifier: ^3.3.2
         version: 3.5.0
+      re-resizable:
+        specifier: ^6.11.2
+        version: 6.11.2(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       rimraf:
         specifier: ^6.0.1
         version: 6.0.1
@@ -324,6 +324,9 @@ importers:
       vitest:
         specifier: ^3.0.8
         version: 3.0.8(@types/debug@4.1.12)(@types/node@20.17.17)(happy-dom@17.1.1)(jiti@2.4.2)(jsdom@26.1.0(bufferutil@4.0.9)(utf-8-validate@6.0.5))(lightningcss@1.33.0)(msw@2.7.0(@types/node@20.17.17)(typescript@5.7.3))(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0)
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0(bufferutil@4.0.9)(utf-8-validate@6.0.5)
       zustand:
         specifier: ^5.0.0
         version: 5.0.3(@types/react@19.3.0)(react@19.3.1)(use-sync-external-store@1.5.0(react@19.3.1))
@@ -1552,7 +1555,7 @@ importers:
         version: 3.0.5(@types/debug@4.1.12)(@types/node@24.19.2)(@vitest/browser@3.0.5)(happy-dom@17.1.1)(jiti@2.4.2)(jsdom@26.1.0(bufferutil@4.0.9)(utf-8-validate@6.0.5))(lightningcss@1.33.0)(msw@2.7.0(@types/node@24.19.2)(typescript@5.7.3))(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0)
       vitest-browser-react:
         specifier: ^0.1.1
-        version: 0.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@vitest/browser@3.0.5(@types/node@24.19.2)(bufferutil@4.0.9)(playwright@1.50.1)(typescript@5.7.3)(utf-8-validate@6.0.5)(vite@8.3.8(@types/node@24.19.2)(jiti@2.4.2)(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0))(vitest@3.0.5))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@3.0.5(@types/debug@4.1.12)(@types/node@24.19.2)(@vitest/browser@3.0.5)(happy-dom@17.1.1)(jiti@2.4.2)(jsdom@26.1.0(bufferutil@4.0.9)(utf-8-validate@6.0.5))(lightningcss@1.33.0)(msw@2.7.0(@types/node@24.19.2)(typescript@5.7.3))(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0))
+        version: 0.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@vitest/browser@3.0.5)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@3.0.5)
 
   packages/ui-tars/shared:
     devDependencies:
@@ -24211,7 +24214,7 @@ snapshots:
       tsx: 4.19.2
       yaml: 2.7.0
 
-  vitest-browser-react@0.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@vitest/browser@3.0.5(@types/node@24.19.2)(bufferutil@4.0.9)(playwright@1.50.1)(typescript@5.7.3)(utf-8-validate@6.0.5)(vite@8.3.8(@types/node@24.19.2)(jiti@2.4.2)(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0))(vitest@3.0.5))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@3.0.5(@types/debug@4.1.12)(@types/node@24.19.2)(@vitest/browser@3.0.5)(happy-dom@17.1.1)(jiti@2.4.2)(jsdom@26.1.0(bufferutil@4.0.9)(utf-8-validate@6.0.5))(lightningcss@1.33.0)(msw@2.7.0(@types/node@24.19.2)(typescript@5.7.3))(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0)):
+  vitest-browser-react@0.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@vitest/browser@3.0.5)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@3.0.5):
     dependencies:
       '@vitest/browser': 3.0.5(@types/node@24.19.2)(bufferutil@4.0.9)(playwright@1.50.1)(typescript@5.7.3)(utf-8-validate@6.0.5)(vite@8.3.8(@types/node@24.19.2)(jiti@2.4.2)(sass-embedded@1.83.4)(sass@1.85.1)(tsx@4.19.2)(yaml@2.7.0))(vitest@3.0.5)
       react: 18.3.1
