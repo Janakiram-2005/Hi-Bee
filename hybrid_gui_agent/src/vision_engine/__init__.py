@@ -13,11 +13,10 @@ from .homing_agent import VisualHomingAgent
 from .local_brain import (
     LocalVisionBrain,
     Base64FrameThrottler,
-    get_finger_states,
     check_hand_bounds,
     calculate_landmark_distance,
-    detect_hand_gestures,
     detect_face_gestures,
+)
 try:
     from .coordinate_mapper import CoordinateMapper
 except Exception:
@@ -36,7 +35,7 @@ from .gesture_engine import (
     validate_landmarks,
     validate_hold_threshold,
     matches_finger_states,
-    GestureHoldTracker
+    GestureHoldTracker,
 )
 
 __all__ = [
@@ -53,10 +52,8 @@ __all__ = [
     "detect_face_gestures",
     "calculate_gesture_specificity",
     "rank_gestures_by_specificity",
-    "detect_hand_gestures",
-    "get_finger_states",
     "validate_landmarks",
     "validate_hold_threshold",
     "matches_finger_states",
-    "GestureHoldTracker"
+    "GestureHoldTracker",
 ]
