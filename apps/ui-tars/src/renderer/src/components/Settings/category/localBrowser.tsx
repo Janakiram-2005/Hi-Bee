@@ -37,7 +37,7 @@ export function LocalBrowserSettings() {
   const { settings, updateSetting } = useSetting();
 
   const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+    resolver: (zodResolver as any)(formSchema),
     defaultValues: {
       searchEngineForBrowser: undefined,
     },

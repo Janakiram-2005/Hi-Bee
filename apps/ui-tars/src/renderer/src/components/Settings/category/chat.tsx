@@ -36,7 +36,7 @@ export function ChatSettings() {
   const { settings, updateSetting } = useSetting();
 
   const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+    resolver: (zodResolver as any)(formSchema),
     defaultValues: {
       language: undefined,
       maxLoopCount: 0,
