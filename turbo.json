@@ -12,16 +12,27 @@
         "**/out/**"
       ]
     },
-    "ui-tars-desktop#build": {
+    "@ui-tars/shared#build": {
       "outputs": [
-        "apps/ui-tars-desktop/dist/**",
-        "apps/ui-tars-desktop/out/**"
+        "dist/**"
+      ]
+    },
+    "ui-tars-desktop#build": {
+      "dependsOn": [
+        "@ui-tars/shared#build"
+      ],
+      "outputs": [
+        "dist/**",
+        "out/**"
       ]
     },
     "ui-tars-desktop#build:e2e": {
+      "dependsOn": [
+        "@ui-tars/shared#build"
+      ],
       "outputs": [
-        "apps/ui-tars-desktop/out/**",
-        "apps/ui-tars-desktop/dist/**"
+        "out/**",
+        "dist/**"
       ]
     },
     "ui-tars-desktop#test:e2e": {
