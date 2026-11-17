@@ -106,7 +106,6 @@ export function VisionWakePanel({
     name: '',
     time: 0,
   });
-  const openPalmHoldStartRef = useRef<number>(0);
   const activeHoldRef = useRef<{
     gestureId: string;
     gesture: any;
@@ -184,8 +183,8 @@ export function VisionWakePanel({
     }),
   );
 
-  const smootherRef = useRef<DprGestureStateSmoother>(
-    new DprGestureStateSmoother(2, 3),
+  const smootherRef = useRef<GestureStateSmoother>(
+    new GestureStateSmoother(2, 3),
   );
 
   useEffect(() => {
@@ -548,8 +547,8 @@ export function VisionWakePanel({
                     const configuredHoldDuration =
                       detectedGesture.holdDuration || 800; // ms
                     const wrist = previewCoordinates[0]?.canvas || {
-                      x: landmarks[0].x * canvas.width,
-                      y: landmarks[0].y * canvas.height,
+                      x: rawLandmarks[0].x * canvas.width,
+                      y: rawLandmarks[0].y * canvas.height,
                     };
 
                     const currentHold = activeHoldRef.current;
