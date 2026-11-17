@@ -9,9 +9,11 @@ import {
   Unlock,
   CheckCircle2,
   Zap,
+  RefreshCw,
+  Cpu,
+  CheckCircle,
 } from 'lucide-react';
 import {
-  FilesetResolver,
   HandLandmarker,
   FaceLandmarker,
   DrawingUtils,
@@ -28,6 +30,11 @@ import {
   computeDprFingerStates,
   DprGestureStateSmoother,
 } from '../../utils/gestureDpr';
+import {
+  resolveVisionWasmFileset,
+  createHandLandmarkerWithFallback,
+  createFaceLandmarkerWithFallback,
+} from '../../utils/visionLoader';
 import './VoiceAvatar.css';
 
 export function VisionWakePanel({
@@ -46,6 +53,13 @@ export function VisionWakePanel({
   const [lowLightWarning, setLowLightWarning] = useState(false);
   const [engineReady, setEngineReady] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
+  const [engineSource, setEngineSource] = useState<'local' | 'cdn' | null>(
+    null,
+  );
+  const [engineDelegate, setEngineDelegate] = useState<'GPU' | 'CPU' | null>(
+    null,
+  );
+  const [initRetryKey, setInitRetryKey] = useState<number>(0);
   const [isTranslating, setIsTranslating] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
 
@@ -136,42 +150,55 @@ export function VisionWakePanel({
     testGesturesRef.current = testGestures;
   }, [testGestures]);
 
-  // Initialize MediaPipe Models
+  // Initialize MediaPipe Models with Offline Fallback and Delegate Resilience
   useEffect(() => {
     let active = true;
+    setErrorState(null);
+    setEngineReady(false);
+
     const initModels = async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm',
+        console.info(
+          '[VisionWakePanel] Initializing MediaPipe vision engine...',
+        );
+        const { fileset, source } = await resolveVisionWasmFileset((msg) =>
+          console.info('[VisionWakePanel]', msg),
         );
 
         if (!active) return;
+        setEngineSource(source);
 
-        const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: `/models/hand_landmarker.task`,
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numHands: 2,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
+        // HandLandmarker with GPU -> CPU delegate fallback
+        const { landmarker: handLandmarker, delegate: handDelegate } =
+          await createHandLandmarkerWithFallback(
+            fileset,
+            {
+              numHands: 2,
+              minHandDetectionConfidence: 0.5,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            },
+            (msg) => console.info('[VisionWakePanel]', msg),
+          );
 
-        const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: `/models/face_landmarker.task`,
-            delegate: 'GPU',
-          },
-          runningMode: 'VIDEO',
-          numFaces: 1,
-          outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: true,
-          minFaceDetectionConfidence: 0.5,
-          minFacePresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
+        if (!active) {
+          handLandmarker.close();
+          return;
+        }
+
+        // FaceLandmarker with GPU -> CPU delegate fallback
+        const { landmarker: faceLandmarker } =
+          await createFaceLandmarkerWithFallback(
+            fileset,
+            {
+              outputFaceBlendshapes: true,
+              outputFacialTransformationMatrixes: true,
+              minFaceDetectionConfidence: 0.5,
+              minFacePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5,
+            },
+            (msg) => console.info('[VisionWakePanel]', msg),
+          );
 
         if (!active) {
           handLandmarker.close();
@@ -181,11 +208,20 @@ export function VisionWakePanel({
 
         handLandmarkerRef.current = handLandmarker;
         faceLandmarkerRef.current = faceLandmarker;
+        setEngineDelegate(handDelegate);
         setEngineReady(true);
         setErrorState(null);
+        console.info(
+          `[VisionWakePanel] Vision engine ready (${source === 'local' ? 'Local Bundle' : 'CDN'}, ${handDelegate} delegate).`,
+        );
       } catch (error: any) {
-        console.error('Failed to load MediaPipe models:', error);
-        setErrorState('AI Model Error: ' + error.message);
+        if (!active) return;
+        console.error(
+          '[VisionWakePanel] Failed to load MediaPipe models:',
+          error,
+        );
+        setErrorState(`AI Model Error: ${error?.message || error}`);
+        setEngineReady(false);
       }
     };
 
@@ -195,8 +231,15 @@ export function VisionWakePanel({
       active = false;
       handLandmarkerRef.current?.close();
       faceLandmarkerRef.current?.close();
+      handLandmarkerRef.current = null;
+      faceLandmarkerRef.current = null;
     };
-  }, []);
+  }, [initRetryKey]);
+
+  const handleRetry = () => {
+    setErrorState(null);
+    setInitRetryKey((k) => k + 1);
+  };
 
   // Load configured gestures
   useEffect(() => {
@@ -759,6 +802,40 @@ export function VisionWakePanel({
         </label>
       </div>
 
+      {/* Engine Status Indicator */}
+      {engineReady && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 10px',
+            background: 'rgba(30, 41, 59, 0.7)',
+            borderRadius: '6px',
+            fontSize: '11px',
+            color: '#94a3b8',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <CheckCircle size={13} style={{ color: '#4ade80' }} />
+            <span>AI Vision Engine Ready</span>
+          </span>
+          <span
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              color: '#38bdf8',
+              fontWeight: 500,
+            }}
+          >
+            <Cpu size={12} />
+            {engineSource === 'local' ? 'Local WASM' : 'CDN WASM'} •{' '}
+            {engineDelegate || 'GPU'}
+          </span>
+        </div>
+      )}
+
       {/* Engagement Gating Status & Control */}
       {isVisionEnabled && (
         <div
@@ -1045,16 +1122,39 @@ export function VisionWakePanel({
             <div
               style={{
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100%',
-                color: '#ef4444',
+                color: '#f87171',
                 fontSize: '12px',
                 textAlign: 'center',
                 padding: '16px',
+                gap: '8px',
               }}
             >
-              {errorState}
+              <AlertTriangle size={24} />
+              <span>{errorState}</span>
+              <button
+                type="button"
+                onClick={handleRetry}
+                style={{
+                  marginTop: '4px',
+                  padding: '6px 12px',
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <RefreshCw size={12} /> Retry Initialization
+              </button>
             </div>
           ) : engineReady ? (
             <canvas
@@ -1078,6 +1178,7 @@ export function VisionWakePanel({
             <div
               style={{
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 height: '100%',
@@ -1085,9 +1186,15 @@ export function VisionWakePanel({
                 fontSize: '12px',
                 textAlign: 'center',
                 padding: '16px',
+                gap: '8px',
               }}
             >
-              Warming up AI engine...
+              <RefreshCw
+                size={18}
+                className="animate-spin"
+                style={{ color: '#3b82f6' }}
+              />
+              <span>Warming up AI engine (offline first)...</span>
             </div>
           )}
         </div>
