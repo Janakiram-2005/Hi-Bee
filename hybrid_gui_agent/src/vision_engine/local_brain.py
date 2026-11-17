@@ -10,6 +10,31 @@ import base64
 import os
 import math
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
+try:
+    from vision_engine.gesture_engine import (
+        get_finger_states,
+        detect_hand_gestures,
+        calculate_gesture_specificity,
+        rank_gestures_by_specificity,
+        validate_landmarks,
+        validate_hold_threshold,
+        GestureHoldTracker
+    )
+except ImportError:
+    from gesture_engine import (
+        get_finger_states,
+        detect_hand_gestures,
+        calculate_gesture_specificity,
+        rank_gestures_by_specificity,
+        validate_landmarks,
+        validate_hold_threshold,
+        GestureHoldTracker
+    )
+
 HAND_CONNECTIONS = frozenset([
   (0, 1), (1, 2), (2, 3), (3, 4),
   (0, 5), (5, 6), (6, 7), (7, 8),
@@ -51,7 +76,8 @@ def process_vision():
     LOW_LIGHT_THRESHOLD = 40.0
 
     gaze_start_time = None
-    gesture_states = {} # Tracks held time for gestures
+    gesture_states = {} # Legacy fallback
+    hold_tracker = GestureHoldTracker(default_hold_time=HOLD_TIME_REQUIRED)
     blink_history = []
     head_history = []
 
@@ -66,37 +92,6 @@ def process_vision():
                 pass
         return []
 
-    def get_finger_states(hand_landmarks):
-        # Calculate finger states (open/closed)
-        # Thumb: compare x-coordinates for open/close relative to hand orientation
-        thumb_open = hand_landmarks[4].x < hand_landmarks[3].x if hand_landmarks[17].x > hand_landmarks[5].x else hand_landmarks[4].x > hand_landmarks[3].x
-        index_open = hand_landmarks[8].y < hand_landmarks[6].y
-        middle_open = hand_landmarks[12].y < hand_landmarks[10].y
-        ring_open = hand_landmarks[16].y < hand_landmarks[14].y
-        pinky_open = hand_landmarks[20].y < hand_landmarks[18].y
-        
-        return {
-            "thumb": "open" if thumb_open else "closed",
-            "index": "open" if index_open else "closed",
-            "middle": "open" if middle_open else "closed",
-            "ring": "open" if ring_open else "closed",
-            "pinky": "open" if pinky_open else "closed"
-        }
-
-    def detect_hand_gestures(hand_landmarks, custom_gestures):
-        states = get_finger_states(hand_landmarks)
-        matched = []
-        for g in custom_gestures:
-            if g.get('type', 'hand') != 'hand': continue
-            match = True
-            for finger, req_state in g.get('fingers', {}).items():
-                if req_state != 'any' and states.get(finger) != req_state:
-                    match = False
-                    break
-            if match:
-                matched.append(g)
-        return matched, states
-        
     def detect_face_gestures(custom_gestures, blink_left, blink_right, pitch, yaw, now):
         matched = []
         
@@ -272,42 +267,38 @@ def process_vision():
                     pts = [{"x": lm.x, "y": lm.y} for lm in hand_landmarks]
                     matched_gestures, states = detect_hand_gestures(hand_landmarks, custom_gestures)
                     
-                    # We just take the first matched gesture name for display purposes
+                    # Highest specificity match is first
                     display_gesture = matched_gestures[0]['name'] if matched_gestures else "none"
+                    best_spec = calculate_gesture_specificity(matched_gestures[0]) if matched_gestures else 0
                     
-                    for mg in matched_gestures:
-                        current_gestures.append(mg)
+                    if matched_gestures:
+                        # Only keep highest specificity matches for this hand pose
+                        top_matches = [g for g in matched_gestures if calculate_gesture_specificity(g) == best_spec]
+                        for mg in top_matches:
+                            current_gestures.append(mg)
                         
                     payload["hands"].append({
                         "landmarks": pts,
                         "gesture": display_gesture,
-                        "finger_states": states
+                        "finger_states": states,
+                        "specificity": best_spec
                     })
             
             # Update gesture holds based on action
             now = time.time()
-            active_actions = {g['action']: g for g in current_gestures}
-            
-            for action, g in active_actions.items():
-                if action not in gesture_states:
-                    gesture_states[action] = now
-                elif now - gesture_states[action] >= HOLD_TIME_REQUIRED:
-                    # Emit gesture trigger
+            events = hold_tracker.update(current_gestures, now)
+            for ev in events:
+                # Structured state logging
+                print(json.dumps(ev))
+                if ev.get('state') == GestureHoldTracker.STATE_TRIGGERED:
+                    # Backward-compatible trigger event
                     print(json.dumps({
                         "type": "vision-gesture", 
-                        "gesture": g['name'], 
-                        "action": action, 
-                        "actionArg": g.get('actionArg')
+                        "gesture": ev['gesture'], 
+                        "action": ev['action'], 
+                        "actionArg": ev.get('actionArg')
                     }))
-                    sys.stdout.flush()
-                    # Reset to avoid spamming
-                    gesture_states[action] = now + 1.5 # 1.5 second cooldown
-                    
-            # Clear states for actions no longer active
-            inactive_actions = [a for a in gesture_states.keys() if a not in active_actions]
-            for a in inactive_actions:
-                if gesture_states[a] < now: # keep cooldowns active
-                    del gesture_states[a]
+                sys.stdout.flush()
                 
             # --- Draw and Encode Live Frame ---
             # Draw Face Points (lightly) since we don't have tessellation connections
